@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- 引入地图依赖 Leaflet.js -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<style>
+    /* 降低 z-index 从 10 到 1，并加上 position: relative 避免遮挡导航栏 */
+    .flip-container { perspective: 1000px; z-index: 1; position: relative; }
+    .flip-card { width: 100%; height: 100%; position: relative; transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1); transform-style: preserve-3d; }
+    .flip-card.flipped { transform: rotateY(180deg); }
+    .flip-front, .flip-back { position: absolute; top: 0; left: 0; right: 0; bottom: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 1rem; overflow: hidden; display: flex; flex-direction: column; }
+    .flip-front { transform: rotateY(0deg); z-index: 2; pointer-events: auto; }
+    .flip-back { transform: rotateY(180deg); z-index: 1; pointer-events: none; }
+    .flip-card.flipped .flip-front { pointer-events: none; z-index: 1; }
+    .flip-card.flipped .flip-back { pointer-events: auto; z-index: 2; }
+
+    /* 限制 Leaflet 地图的全局层级，防止它覆盖到侧边/顶部导航栏 */
+    .leaflet-container { z-index: 1 !important; }
+
+    /* 取消点击红点时的焦点白框，并增加鼠标指针样式 */
+    .leaflet-container :focus { outline: none !important; }
+    path.leaflet-interactive:focus { outline: none !important; }
+    .leaflet-marker-icon:focus { outline: none !important; }
+    .cursor-pointer-marker { cursor: pointer !important; }
+
+    .hotspot-scroll-container { height: 350px; overflow-y: auto; padding-right: 8px; }
+    .hotspot-scroll-container::-webkit-scrollbar { width: 4px; }
+    .hotspot-scroll-container::-webkit-scrollbar-thumb { background: linear-gradient(to bottom, #ef4444, #f59e0b); border-radius: 10px; }
+
+    /* 赛博风格 Tooltip */
+    .cyber-tooltip { background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(34, 211, 238, 0.5); color: white; border-radius: 0.5rem; box-shadow: 0 0 20px rgba(0,0,0,0.5); padding: 8px; border-left: 4px solid #22d3ee; }
+
+    /* 图片容器布局优化：确保图片完整 */
+    .img-display-area { flex: 1; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); border-radius: 0.75rem; padding: 10px; overflow: hidden; }
+    .img-display-area img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+    /* 分析文字卡片样式 */
+    .analysis-box { margin-top: 12px; padding: 12px; border-radius: 0.75rem; font-size: 0.85rem; line-height: 1.5; }
+    .warning-box { background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; color: #fca5a5; }
+    .info-box { background: rgba(59, 130, 246, 0.1); border-left: 4px solid #3b82f6; color: #93c5fd; }
+</style>
+
+<div class="space-y-6">
+    <div class="mb-6 border-b border-cyan-500/20 pb-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono mb-3">
+            <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+            SYSTEM DASHBOARD
+        </div>
+        <h3 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-cyan-400 tech-font mb-2">济南市网约车需求预测综合展示台</h3>
+        <p class="text-slate-400 text-sm">
+            全方位呈现 Mamba-GNN 模型在济南市数据集上的预测性能、时序拟合曲线以及空间热点分布情况。
+        </p>
+    </div>
+
+    <!-- 顶部数据概览 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="cyber-panel p-6 border-t-4 border-cyan-400 flex flex-col items-center justify-center">
+            <p class="text-sm text-gray-400 mb-2 font-medium">平均绝对误差 (MAE)</p>
+            <h2 class="text-4xl font-bold text-cyan-400 font-mono" id="mae">--</h2>
+        </div>
+        <div class="cyber-panel p-6 border-t-4 border-purple-500 flex flex-col items-center justify-center">
+            <p class="text-sm text-gray-400 mb-2 font-medium">决定系数 (R²)</p>
+            <h2 class="text-4xl font-bold text-purple-500 font-mono" id="r2">--</h2>
+        </div>
+        <div class="cyber-panel p-6 border-t-4 border-emerald-400 flex flex-col items-center justify-center">
+            <p class="text-sm text-gray-400 mb-2 font-medium">预测稳定性</p>
+            <h2 class="text-4xl font-bold text-emerald-400 font-mono">极佳</h2>
+        </div>
+    </div>
+
+    <!-- 中部：时序与热点 -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 h-[480px] flip-container">
+            <div class="flip-card" id="card1">
+                <div class="flip-front cyber-panel p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-semibold text-white flex items-center"><i data-lucide="line-chart" class="w-5 h-5 mr-2 text-cyan-400"></i> 济南市需求拟合曲线</h3>
+                        <button class="text-xs bg-slate-800 text-cyan-300 px-4 py-1.5 rounded-full border border-cyan-500/30 hover:bg-cyan-500/20" onclick="document.getElementById('card1').classList.toggle('flipped')">查看 Loss 趋势</button>
+                    </div>
+                    <div class="flex-1 relative w-full h-full"><canvas id="lineChart"></canvas></div>
+                </div>
+                <div class="flip-back cyber-panel p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-semibold text-white flex items-center"><i data-lucide="activity" class="w-5 h-5 mr-2 text-orange-400"></i> 训练 Loss 收敛细节</h3>
+                        <button class="text-xs bg-slate-800 text-orange-300 px-4 py-1.5 rounded-full border border-orange-500/30 hover:bg-orange-500/20" onclick="document.getElementById('card1').classList.toggle('flipped')">返回预测曲线</button>
+                    </div>
+                    <div class="flex-1 relative w-full h-full"><canvas id="lossChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-1 h-[480px] cyber-panel p-6 flex flex-col border-l-4 border-red-500">
+            <h3 class="text-xl font-bold mb-6 text-white flex items-center"><i data-lucide="flame" class="w-6 h-6 mr-2 text-red-500 animate-pulse"></i> Top 5 热门预测区域</h3>
+            <div class="hotspot-scroll-container pr-2" id="hotspot-list"></div>
+            <div class="mt-auto pt-4 border-t border-slate-700/50">
+                <p class="text-xs text-slate-500 font-mono tracking-widest uppercase mb-1">Total Predicted Flow</p>
+                <span id="total-vol" class="text-red-500 font-mono text-4xl font-bold">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部：地图 -->
+    <div class="cyber-panel p-6 border-t-4 border-blue-500 flex flex-col relative z-0">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-bold text-white flex items-center">
+                <i data-lucide="map" class="w-6 h-6 mr-2 text-blue-400"></i> 空间预测热点地理分布
+            </h3>
+        </div>
+        <div id="heatmap-container" class="w-full rounded-lg border border-slate-700/50 bg-slate-900/50 relative z-0" style="height: 500px;"></div>
+    </div>
+
+    <!-- 深度分析区：高级用户可见 -->
+    <div id="advanced-diagnostics" class="h-[780px] flip-container mt-6">
+        <div class="flip-card" id="card2">
+            <!-- 正面：空间误差 + 调度提醒 -->
+            <div class="flip-front cyber-panel p-8 border-t-4 border-pink-500">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold text-white flex items-center">
+                        <i data-lucide="image" class="w-6 h-6 mr-2 text-pink-400"></i> 空间误差分布 (Mamba-GNN)
+                    </h3>
+                    <button class="text-sm bg-slate-800 text-pink-300 px-5 py-2 rounded-full border border-pink-500/50 hover:bg-pink-500/20" onclick="document.getElementById('card2').classList.toggle('flipped')">
+                        查看训练指标分析
+                    </button>
+                </div>
+                <div class="img-display-area">
+                    <img src="/results/spatial_error_map_Mamba-GNN.png" alt="空间误差分布图">
+                </div>
+                <div class="analysis-box warning-box">
+                    <div class="flex items-center gap-2 mb-1">
+                        <i data-lucide="alert-triangle" class="w-4 h-4 text-red-500"></i>
+                        <strong class="text-red-400">调度员核心提醒：</strong>
+                    </div>
+                    请重点关注 <strong>趵突泉/市中心 (网格82)</strong> 及 <strong>山东省博物馆/CBD区域 (网格83)</strong>。上述区域属于“超高流量+高波动”地段，受天气、突发事件和复杂路网的影响极大。在参考系统预测数据时，请务必在这两个核心区域<strong>预留更多的弹性运力</strong>，以应对瞬时爆发性需求。
+                </div>
+            </div>
+
+            <!-- 背面：综合曲线 + 指标分析 -->
+            <div class="flip-back cyber-panel p-8 border-t-4 border-indigo-500">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold text-white flex items-center">
+                        <i data-lucide="git-merge" class="w-6 h-6 mr-2 text-indigo-400"></i> Mamba-GNN 训练指标全系曲线
+                    </h3>
+                    <button class="text-sm bg-slate-800 text-indigo-300 px-5 py-2 rounded-full border border-indigo-500/50 hover:bg-indigo-500/20" onclick="document.getElementById('card2').classList.toggle('flipped')">
+                        返回空间误差
+                    </button>
+                </div>
+                <div class="img-display-area">
+                    <img src="/results/Mamba-GNN_all_metrics_curves.png" alt="训练指标变化曲线">
+                </div>
+                <div class="analysis-box info-box">
+                    <div class="flex items-center gap-2 mb-1">
+                        <i data-lucide="info" class="w-4 h-4 text-blue-400"></i>
+                        <strong class="text-blue-300">训练效能简析：</strong>
+                    </div>
+                    指标变化曲线显示，模型在前15个Epoch内实现了预测性能的快速飞跃，准确率 (Accuracy) 最终稳定在 <strong>90%</strong> 附近，MAE 显著下降并稳定在 <strong>2.0</strong> 以下。Mamba 架构在长时序记忆上的优势使得 R² 指标展现出极强的鲁棒性，无明显过拟合迹象。
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    lucide.createIcons();
+
+    let currentUser = null;
+    try {
+        const token = localStorage.getItem('mamba_auth_token');
+        if (token) currentUser = JSON.parse(token);
+    } catch(e) {}
+    const isAdvanced = currentUser && (currentUser.role === 'admin' || currentUser.role === 'super');
+
+    const SCENIC_SPOTS_MAP = {
+        82: { cn: "趵突泉景区及市中心", lat: 36.660958, lon: 117.016158, url: "https://baike.baidu.com/item/%E8%B6%B5%E7%AA%81%E6%B3%89/162170" },
+        83: { cn: "山东省博物馆及CBD区域", lat: 36.658497, lon: 117.095645, url: "https://baike.baidu.com/item/%E5%B1%B1%E4%B8%9C%E5%8D%9A%E7%89%A9%E9%A6%86/9588493" },
+        81: { cn: "山东济西国家湿地公园", lat: 36.652445, lon: 116.80664, url: "https://baike.baidu.com/item/%E5%B1%B1%E4%B8%9C%E6%B5%8E%E8%A5%BF%E5%9B%BD%E5%AE%B6%E6%B9%BF%E5%9C%B0%E5%85%AC%E5%9B%AD/23591125" },
+        86: { cn: "百脉泉公园", lat: 36.719829, lon: 117.53632, url: "https://baike.baidu.com/item/%E7%99%BE%E8%84%89%E6%B3%89" },
+        84: { cn: "济南首创奥特莱斯", lat: 36.692267, lon: 117.232234, url: "https://baike.baidu.com/item/%E9%A6%96%E5%88%9B%E5%A5%A5%E7%89%B9%E8%8E%B1%E6%96%AF/61224771" }
+    };
+
+    function renderDashboard(data) {
+        if (!data) return;
+
+        // 权限控制：普通用户隐藏底部深度诊断区
+        if (!isAdvanced) {
+            const advZone = document.getElementById('advanced-diagnostics');
+            if (advZone) advZone.style.display = 'none';
+        }
+
+        const mambaMetrics = data.evaluation_groups?.Fusion_Comparison?.['Mamba-GNN'] || {};
+        const parseNum = v => typeof v === 'string' ? parseFloat(v.split('±')[0]) : (v || 0);
+
+        document.getElementById('mae').textContent = parseNum(mambaMetrics.mae).toFixed(2);
+        document.getElementById('r2').textContent = (parseNum(mambaMetrics.r2) * 100).toFixed(2) + '%';
+
+        // 渲染排行榜 (新增点击跳转地图功能)
+        const container = document.getElementById('hotspot-list');
+        container.innerHTML = '';
+        let totalVol = 0;
+        (data.hotspots || []).forEach((h, i) => {
+            totalVol += h.predicted_volume;
+            const spot = SCENIC_SPOTS_MAP[h.grid_id] || { cn: "未知网格区域", lat: null, lon: null };
+
+            const div = document.createElement('div');
+            // 添加 cursor-pointer 与 hover 样式
+            div.className = "p-3.5 mb-3 flex items-center gap-3 bg-slate-800/40 border border-slate-700/50 rounded-xl cursor-pointer hover:border-cyan-500/50 hover:bg-slate-800/80 transition-all";
+            div.innerHTML = `
+                <div class="w-10 h-10 flex items-center justify-center font-bold rounded-lg ${i < 3 ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.4)]' : 'bg-slate-700 text-slate-400'}">${h.rank}</div>
+                <div class="flex-grow min-w-0">
+                    <h4 class="text-white font-bold text-sm truncate">${spot.cn}</h4>
+                    <p class="text-[10px] text-cyan-500 mt-1 flex items-center"><i data-lucide="navigation" class="w-3 h-3 mr-1"></i>点击定位至该区域</p>
+                </div>
+                <div class="text-right pl-3 border-l border-slate-700/50"><span class="text-cyan-400 font-mono font-bold text-xl">${h.predicted_volume.toLocaleString()}</span></div>
+            `;
+
+            // 绑定点击事件，联动地图平滑移动 (FlyTo)
+            if (spot.lat && spot.lon) {
+                div.onclick = () => {
+                    if (window.myMap) {
+                        window.myMap.flyTo([spot.lat, spot.lon], 13, {
+                            animate: true,
+                            duration: 1.5 // 动画持续 1.5 秒
+                        });
+
+                        // 平滑滚动页面至地图位置
+                        document.getElementById('heatmap-container').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                };
+            }
+            container.appendChild(div);
+        });
+        document.getElementById('total-vol').textContent = totalVol.toLocaleString();
+        lucide.createIcons(); // 重新渲染新插入的图标
+
+        // 渲染时序拟合图
+        const ts = data.predictions_time_series || { ground_truth: [], prediction_mamba_gnn: [] };
+        new Chart(document.getElementById('lineChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: ts.ground_truth.map((_, i) => `T${i}`),
+                datasets: [
+                    { label: '模型预测值', data: ts.prediction_mamba_gnn, borderColor: '#00D9FF', tension: 0.4, fill: true, backgroundColor: 'rgba(0, 217, 255, 0.1)', pointRadius: 2 },
+                    { label: '真实记录值', data: ts.ground_truth, borderColor: '#64748b', borderDash: [5, 5], tension: 0.4, pointRadius: 0 }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+
+        // 渲染损失曲线
+        const loss = data.loss_history?.['Mamba-GNN'] || { train: [], val: [] };
+        new Chart(document.getElementById('lossChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: loss.train.map((_, i) => i + 1),
+                datasets: [
+                    { label: '训练损失 (Train)', data: loss.train, borderColor: '#f97316', tension: 0.4, pointRadius: 0 },
+                    { label: '验证损失 (Val)', data: loss.val, borderColor: '#eab308', tension: 0.4, borderDash: [5, 5], pointRadius: 0 }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+
+        // 地图初始化与红点渲染
+        if (!window.myMap) {
+            window.myMap = L.map('heatmap-container', { zoomControl: false }).setView([36.66, 117.02], 11);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(window.myMap);
+        }
+        (data.hotspots || []).forEach(h => {
+            const info = SCENIC_SPOTS_MAP[h.grid_id];
+            if (!info) return;
+
+            // 增加点击查看百度百科的内联 SVG 提示，确保 Leaflet 生命周期内显示正常
+            let tip = `<div class="p-1">
+                <div class="font-bold text-cyan-400">${info.cn}</div>
+                <div class="text-[10px] text-cyan-500 mt-1 mb-1 flex items-center">
+                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                    点击查看百度百科
+                </div>`;
+
+            if (isAdvanced) {
+                tip += `<div class="mt-1 pt-1 border-t border-white/10 text-[10px] text-slate-400">网格索引: ${h.grid_id}<br>纬度: ${info.lat.toFixed(4)}<br>经度: ${info.lon.toFixed(4)}</div>`;
+            }
+            tip += `</div>`;
+
+            // 生成红点并附带 cursor-pointer 样式
+            const marker = L.circleMarker([info.lat, info.lon], {
+                radius: 6, fillColor: "#ff0000", color: "#ffffff", weight: 1.5, opacity: 1, fillOpacity: 1,
+                className: 'cursor-pointer-marker'
+            }).bindTooltip(tip, { className: 'cyber-tooltip', direction: 'top' }).addTo(window.myMap);
+
+            // 绑定点击事件：跳转对应的百度百科 URL
+            if (info.url) {
+                marker.on('click', function() {
+                    window.open(info.url, '_blank');
+                });
+            }
+        });
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        fetch('/api/data').then(r => r.json()).then(renderDashboard).catch(console.error);
+    });
+</script>
+{% endblock %}

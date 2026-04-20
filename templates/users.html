@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% block content %}
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<div class="space-y-6">
+    <div class="mb-6 border-b border-cyan-500/20 pb-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-mono mb-3">
+            <span class="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
+            ADMIN CONSOLE
+        </div>
+        <h3 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-cyan-400 tech-font mb-2">系统账号与权限控制中心</h3>
+        <p class="text-slate-400 text-sm">
+            最高管理员专属面板。您可以在此检视所有已注册系统的账号、密码及分配的访问层级，并进行权限修正、账户移除或新增账号操作。
+            <br><span class="text-red-400 font-mono tracking-wide">* 安全警告：最高管理员 (admin) 核心账号受系统保护，不可被删除或降级。</span>
+        </p>
+    </div>
+
+    <div class="glass-panel p-6 rounded-2xl relative overflow-hidden flex flex-col h-full border-t-4 border-t-cyan-500/50">
+        <div class="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+            <i data-lucide="shield-alert" class="w-48 h-48"></i>
+        </div>
+
+        <div class="flex justify-between items-center mb-6 relative z-10">
+            <h3 class="text-lg font-semibold flex items-center text-white">
+                <i data-lucide="users" class="w-5 h-5 mr-2 text-cyan-400"></i> 用户注册列表
+            </h3>
+            <!-- 新增账号按钮 -->
+            <button onclick="openAddModal()" class="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-lg transition shadow-lg shadow-emerald-500/20 flex items-center gap-2 text-sm border border-emerald-500/30">
+                <i data-lucide="user-plus" class="w-4 h-4"></i> 新增账号
+            </button>
+        </div>
+
+        <div class="overflow-x-auto flex-grow relative z-10">
+            <table class="w-full text-sm text-left whitespace-nowrap">
+                <thead class="text-xs text-slate-400 uppercase bg-slate-800/80 border-b border-slate-700">
+                <tr>
+                    <th class="px-6 py-4 rounded-tl-lg font-bold">系统账号 (Username)</th>
+                    <th class="px-6 py-4 font-bold">角色分配 (Role)</th>
+                    <th class="px-6 py-4 font-bold">访问令牌 (Password)</th>
+                    <th class="px-6 py-4 text-right rounded-tr-lg font-bold">管理操作 (Actions)</th>
+                </tr>
+                </thead>
+                <tbody id="usersTableBody" class="divide-y divide-slate-700/50">
+                <!-- JS 动态渲染 -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ================= 新增使用者的弹窗 ================= -->
+<div id="add-modal" class="fixed inset-0 z-[110] hidden flex items-center justify-center bg-slate-950/80 backdrop-blur-sm opacity-0 transition-opacity duration-300">
+    <div class="bg-slate-900 border border-emerald-500/30 p-8 rounded-2xl shadow-[0_0_30px_rgba(16,185,129,0.15)] max-w-sm w-full transform scale-95 transition-transform duration-300" id="add-modal-content">
+        <h3 class="text-xl font-bold text-white tech-font mb-6 text-center flex items-center justify-center gap-2">
+            <i data-lucide="user-plus" class="w-6 h-6 text-emerald-400"></i> 新建系统账号
+        </h3>
+
+        <form id="add-form" class="space-y-4 text-left">
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">设置系统账号</label>
+                <input type="text" id="add-username" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-emerald-500 focus:outline-none transition" required placeholder="输入唯一账号名称">
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">初始访问令牌 (密码)</label>
+                <input type="text" id="add-password" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-emerald-500 focus:outline-none transition" required placeholder="设置初始密码">
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">分配角色权限</label>
+                <select id="add-role" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-emerald-500 focus:outline-none transition">
+                    <option value="normal">普通用户 (NORMAL)</option>
+                    <option value="super">高级会员 (SUPER)</option>
+                    <option value="admin">管理员 (ADMIN)</option>
+                </select>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button type="button" onclick="closeAddModal()" class="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg transition border border-slate-700">取消</button>
+                <button type="submit" class="w-1/2 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-lg transition shadow-lg shadow-emerald-500/20">确认创建</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ================= 编辑使用者的弹窗 ================= -->
+<div id="edit-modal" class="fixed inset-0 z-[110] hidden flex items-center justify-center bg-slate-950/80 backdrop-blur-sm opacity-0 transition-opacity duration-300">
+    <div class="bg-slate-900 border border-cyan-500/30 p-8 rounded-2xl shadow-[0_0_30px_rgba(34,211,238,0.15)] max-w-sm w-full transform scale-95 transition-transform duration-300" id="edit-modal-content">
+        <h3 class="text-xl font-bold text-white tech-font mb-6 text-center flex items-center justify-center gap-2">
+            <i data-lucide="user-cog" class="w-6 h-6 text-cyan-400"></i> 编辑账号配置
+        </h3>
+
+        <form id="edit-form" class="space-y-4 text-left">
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">系统账号 (不可修改)</label>
+                <input type="text" id="edit-username" class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-400 cursor-not-allowed focus:outline-none" readonly>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">重置令牌 (密码)</label>
+                <input type="text" id="edit-password" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-cyan-500 focus:outline-none transition" required>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">调整角色权限</label>
+                <select id="edit-role" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-cyan-500 focus:outline-none transition">
+                    <option value="normal">普通用户 (NORMAL)</option>
+                    <option value="super">高级会员 (SUPER)</option>
+                    <option value="admin">管理员 (ADMIN)</option>
+                </select>
+                <p id="edit-role-warning" class="text-[10px] text-red-400 mt-1 hidden">* 核心账号角色已被系统锁定，不可降级。</p>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button type="button" onclick="closeEditModal()" class="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg transition border border-slate-700">取消</button>
+                <button type="submit" class="w-1/2 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-lg transition shadow-lg shadow-cyan-500/20">保存设定</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    lucide.createIcons();
+
+    // 获与储存本地数据库
+    function getDB() {
+        try {
+            let data = localStorage.getItem('mamba_core_users_v2');
+            if (data) return JSON.parse(data);
+            return {};
+        } catch (e) { return {}; }
+    }
+
+    function saveDB(dataObj) {
+        localStorage.setItem('mamba_core_users_v2', JSON.stringify(dataObj));
+    }
+
+    // 密码显示/隐藏切换
+    function togglePwd(btnId, pwdId) {
+        const btn = document.getElementById(btnId);
+        const span = document.getElementById(pwdId);
+        if (span.dataset.hidden === 'true') {
+            span.textContent = span.dataset.raw;
+            span.dataset.hidden = 'false';
+            span.classList.remove('text-slate-500');
+            span.classList.add('text-white', 'font-bold');
+            btn.innerHTML = `<i data-lucide="eye-off" class="w-4 h-4 text-cyan-400"></i>`;
+        } else {
+            span.textContent = '••••••••';
+            span.dataset.hidden = 'true';
+            span.classList.add('text-slate-500');
+            span.classList.remove('text-white', 'font-bold');
+            btn.innerHTML = `<i data-lucide="eye" class="w-4 h-4 text-slate-400"></i>`;
+        }
+        lucide.createIcons();
+    }
+
+    // 渲染表格
+    function renderUsersTable() {
+        const db = getDB();
+        const tbody = document.getElementById('usersTableBody');
+        tbody.innerHTML = '';
+
+        for (const [username, info] of Object.entries(db)) {
+            const isCoreAdmin = (username.toLowerCase() === 'admin');
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-slate-800/50 transition-colors border-l-2 border-transparent hover:border-cyan-500 group';
+
+            // 角色徽章设定
+            let roleHtml = '';
+            if (info.role === 'admin') {
+                roleHtml = `<span class="px-2 py-1 rounded bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-mono font-bold">ADMIN</span>`;
+            } else if (info.role === 'super') {
+                roleHtml = `<span class="px-2 py-1 rounded bg-purple-500/20 border border-purple-500/30 text-purple-400 text-xs font-mono font-bold">SUPER</span>`;
+            } else {
+                roleHtml = `<span class="px-2 py-1 rounded bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs font-mono font-bold">NORMAL</span>`;
+            }
+
+            const pwdId = `pwd-${username}`;
+            const btnId = `btn-${username}`;
+
+            tr.innerHTML = `
+                <td class="px-6 py-4 font-mono font-bold text-white flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs text-cyan-400 border border-slate-600">
+                        ${username.charAt(0).toUpperCase()}
+                    </div>
+                    ${username} ${isCoreAdmin ? '<i data-lucide="shield-check" class="w-4 h-4 text-emerald-400 ml-1" title="核心账号"></i>' : ''}
+                </td>
+                <td class="px-6 py-4">${roleHtml}</td>
+                <td class="px-6 py-4">
+                    <div class="flex items-center gap-3">
+                        <span id="${pwdId}" data-raw="${info.pwd}" data-hidden="true" class="font-mono text-slate-500 tracking-widest w-24">••••••••</span>
+                        <button id="${btnId}" onclick="togglePwd('${btnId}', '${pwdId}')" class="p-1.5 rounded-md hover:bg-slate-700 transition" title="查看/隐藏密码">
+                            <i data-lucide="eye" class="w-4 h-4 text-slate-400"></i>
+                        </button>
+                    </div>
+                </td>
+                <td class="px-6 py-4 text-right">
+                    <div class="flex justify-end gap-2 opacity-30 group-hover:opacity-100 transition-opacity">
+                        <button onclick="openEditModal('${username}', '${info.pwd}', '${info.role}')" class="px-3 py-1.5 bg-slate-800 hover:bg-cyan-500/20 text-cyan-400 border border-slate-700 hover:border-cyan-500/50 rounded flex items-center gap-1 text-xs transition">
+                            <i data-lucide="edit-3" class="w-3 h-3"></i> 编辑
+                        </button>
+                        <button onclick="deleteUser('${username}')" ${isCoreAdmin ? 'disabled' : ''} class="px-3 py-1.5 bg-slate-800 text-red-400 border border-slate-700 rounded flex items-center gap-1 text-xs transition ${isCoreAdmin ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-500/20 hover:border-red-500/50'}">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i> 删除
+                        </button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+        lucide.createIcons();
+    }
+
+    // 删除使用者
+    function deleteUser(username) {
+        if (username.toLowerCase() === 'admin') {
+            alert("安全拦截：核心管理员账号 (admin) 不可被删除！");
+            return;
+        }
+        if (confirm(`⚠️ 危险操作确认\n\n您确定要永久删除账号 [ ${username} ] 吗？此操作无法恢复。`)) {
+            let db = getDB();
+            delete db[username];
+            saveDB(db);
+            renderUsersTable();
+        }
+    }
+
+    // ================= 新增弹窗逻辑 =================
+    function openAddModal() {
+        document.getElementById('add-form').reset();
+        const modal = document.getElementById('add-modal');
+        const content = document.getElementById('add-modal-content');
+        modal.classList.remove('hidden');
+        void modal.offsetWidth;
+        modal.classList.remove('opacity-0');
+        content.classList.remove('scale-95');
+    }
+
+    function closeAddModal() {
+        const modal = document.getElementById('add-modal');
+        const content = document.getElementById('add-modal-content');
+        modal.classList.add('opacity-0');
+        content.classList.add('scale-95');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+
+    document.getElementById('add-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const username = document.getElementById('add-username').value.trim();
+        const pwd = document.getElementById('add-password').value.trim();
+        const role = document.getElementById('add-role').value;
+
+        if (!username || !pwd) {
+            alert("系统账号与密码不能为空！");
+            return;
+        }
+
+        let db = getDB();
+
+        // 检查用户名是否重复 (不区分大小写比较)
+        const usernameExists = Object.keys(db).some(key => key.toLowerCase() === username.toLowerCase());
+
+        if (usernameExists) {
+            alert(`创建失败：账号 [ ${username} ] 已存在！`);
+            return;
+        }
+
+        // 新增账号至 DB
+        db[username] = { pwd: pwd, role: role };
+        saveDB(db);
+
+        closeAddModal();
+        renderUsersTable();
+    });
+
+    // ================= 编辑弹窗逻辑 =================
+    function openEditModal(username, pwd, role) {
+        document.getElementById('edit-username').value = username;
+        document.getElementById('edit-password').value = pwd;
+
+        const roleSelect = document.getElementById('edit-role');
+        const roleWarning = document.getElementById('edit-role-warning');
+
+        roleSelect.value = role;
+
+        // 如果是核心账号，锁死角色选择
+        if (username.toLowerCase() === 'admin') {
+            roleSelect.disabled = true;
+            roleSelect.classList.add('cursor-not-allowed', 'opacity-50');
+            roleWarning.classList.remove('hidden');
+        } else {
+            roleSelect.disabled = false;
+            roleSelect.classList.remove('cursor-not-allowed', 'opacity-50');
+            roleWarning.classList.add('hidden');
+        }
+
+        const modal = document.getElementById('edit-modal');
+        const content = document.getElementById('edit-modal-content');
+        modal.classList.remove('hidden');
+        void modal.offsetWidth;
+        modal.classList.remove('opacity-0');
+        content.classList.remove('scale-95');
+    }
+
+    function closeEditModal() {
+        const modal = document.getElementById('edit-modal');
+        const content = document.getElementById('edit-modal-content');
+        modal.classList.add('opacity-0');
+        content.classList.add('scale-95');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+
+    document.getElementById('edit-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const username = document.getElementById('edit-username').value;
+        const newPwd = document.getElementById('edit-password').value.trim();
+        const newRole = document.getElementById('edit-role').value;
+
+        let db = getDB();
+        if (db[username]) {
+            db[username].pwd = newPwd;
+            // 双重验证：确保即使破解前端 DOM 也无法修改 admin 的角色
+            if (username.toLowerCase() !== 'admin') {
+                db[username].role = newRole;
+            }
+            saveDB(db);
+            closeEditModal();
+            renderUsersTable();
+        }
+    });
+
+    // 初始化渲染
+    document.addEventListener('DOMContentLoaded', () => {
+        renderUsersTable();
+    });
+</script>
+{% endblock %}

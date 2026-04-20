@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    /* 局部样式：头像/图标发光容器 */
+    .icon-glow-box {
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1rem;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: all 0.3s ease;
+    }
+    .feature-card:hover .icon-glow-box {
+        transform: scale(1.1);
+        border-color: rgba(34, 211, 238, 0.5);
+        box-shadow: 0 0 20px rgba(34, 211, 238, 0.2);
+    }
+
+    /* 渐变文字 */
+    .text-gradient-cyan {
+        background: linear-gradient(135deg, #fff 0%, #22d3ee 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+</style>
+
+<div class="space-y-8">
+
+    <div class="glass-panel p-12 rounded-2xl relative overflow-hidden scanline-bg border-t-2 border-cyan-500/30 flex flex-col items-center justify-center">
+        <div class="absolute -right-10 -top-10 w-72 h-72 bg-cyan-500/10 rounded-full blur-3xl"></div>
+        <div class="absolute -left-10 -bottom-10 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl"></div>
+
+        <div class="relative z-10 max-w-4xl mx-auto text-center">
+            <h2 class="text-4xl font-bold text-white tech-font mb-6 tracking-wide leading-tight">
+                解码城市脉搏 <br>
+                <span class="text-gradient-cyan">重构未来交通</span>
+            </h2>
+            <p class="text-slate-300 leading-relaxed text-lg mb-8 mx-auto max-w-2xl">
+                我们致力于通过下一代人工智能技术，解决日益复杂的城市交通拥堵问题。
+                Mamba-GNN 网约车需求预测系统不仅仅是一个预测系统，
+                它是连接城市交通与个人需求的枢纽，
+                致力于让每一次出行都更加精准、高效。
+            </p>
+
+            <div class="flex gap-4 justify-center flex-wrap">
+                <span class="px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 text-sm font-mono flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-cyan-400 rounded-full"></span> State Space Models
+                </span>
+                <span class="px-4 py-1.5 rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-400 text-sm font-mono flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-purple-400 rounded-full"></span> Graph Neural Networks
+                </span>
+                <span class="px-4 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-sm font-mono flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> Intelligent Transportation
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        <div class="glass-panel p-6 rounded-2xl feature-card group hover:bg-slate-800/50 transition duration-500">
+            <div class="icon-glow-box">
+                <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2 group-hover:text-cyan-400 transition">极致性能</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">
+                引入 <strong>Mamba (SSM)</strong> 架构，打破了传统 Transformer 的计算瓶颈。在处理长序列交通历史数据时，实现推理速度提升。
+            </p>
+        </div>
+
+        <div class="glass-panel p-6 rounded-2xl feature-card group hover:bg-slate-800/50 transition duration-500">
+            <div class="icon-glow-box">
+                <svg class="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2 group-hover:text-purple-400 transition">全域感知</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">
+                利用 <strong>图神经网络 (GNN)</strong> 深度建模城市路网拓扑结构。不仅关注单点流量，更能精准捕捉拥堵在相邻区域间的扩散效应。
+            </p>
+        </div>
+
+        <div class="glass-panel p-6 rounded-2xl feature-card group hover:bg-slate-800/50 transition duration-500">
+            <div class="icon-glow-box">
+                <svg class="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2 group-hover:text-emerald-400 transition">鲁棒稳定</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">
+                基于 Flask + CUDA 的高并发架构设计。系统内置异常检测与自动降级机制，确保在数据缺失或极端网络环境下依然提供可靠的基准服务。
+            </p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div class="glass-panel p-8 rounded-2xl flex flex-col justify-center">
+            <h3 class="text-xl font-bold text-white tech-font mb-4">关于 INTELLIGENT TRAFFIC LAB</h3>
+            <p class="text-slate-400 text-sm mb-6 leading-relaxed">
+                我们要做的不仅仅是代码的堆叠，而是探索深度学习在物理世界中的边界。
+                本实验室专注于时空数据挖掘、图深度学习以及大模型在智慧城市中的应用。
+            </p>
+            <div class="flex gap-4 text-xs font-mono text-slate-500">
+                <span>FOUNDED: 2026</span>
+                <span>•</span>
+                <span>LOC: YANTAI, CN</span>
+            </div>
+        </div>
+
+        <div class="glass-panel p-8 rounded-2xl border-l-4 border-l-cyan-500 flex flex-col justify-center items-start">
+            <h3 class="text-xl font-bold text-white tech-font mb-2">欢迎交流</h3>
+            <p class="text-slate-400 text-sm mb-6">
+                我们欢迎任何形式的贡献、建议或学术交流。
+            </p>
+            <div class="flex gap-4">
+                <a href="#" class="px-6 py-2 rounded-lg border border-white/20 text-white font-bold text-sm hover:bg-white/10 transition">作者邮箱：1479817587@qq.com</a>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

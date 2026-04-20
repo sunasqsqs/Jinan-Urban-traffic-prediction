@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    /* 局部样式：文档专用 - 保持原有样式不变 */
+    .doc-sidebar {
+        position: sticky;
+        top: 100px;
+        height: fit-content;
+    }
+
+    .doc-link {
+        display: block;
+        padding: 0.75rem 1rem;
+        color: #94a3b8; /* slate-400 */
+        font-size: 0.875rem;
+        border-left: 2px solid transparent;
+        transition: all 0.3s;
+    }
+
+    .doc-link:hover, .doc-link.active {
+        color: #22d3ee; /* cyan-400 */
+        border-left-color: #22d3ee;
+        background: linear-gradient(90deg, rgba(34, 211, 238, 0.05), transparent);
+    }
+
+    .code-block {
+        background: #0f172a; /* slate-900 */
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 0.5rem;
+        padding: 1rem;
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 0.85rem;
+        overflow-x: auto;
+        color: #e2e8f0;
+        margin-bottom: 1rem;
+    }
+
+    .keyword { color: #c084fc; } /* purple */
+    .string { color: #86efac; } /* green */
+    .comment { color: #64748b; } /* slate */
+    .func { color: #67e8f9; } /* cyan */
+    .cmd { color: #fbbf24; } /* amber */
+
+    h2 { font-size: 1.5rem; font-weight: 700; color: white; margin-bottom: 1rem; margin-top: 3rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem; }
+    h3 { font-size: 1.1rem; font-weight: 600; color: #e2e8f0; margin-bottom: 0.75rem; margin-top: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    p { color: #94a3b8; line-height: 1.7; margin-bottom: 1rem; }
+    ul { list-style: disc; padding-left: 1.5rem; color: #94a3b8; margin-bottom: 1rem; }
+    li { margin-bottom: 0.5rem; }
+    strong { color: #e2e8f0; font-weight: 600; }
+
+    /* 表格样式 */
+    .doc-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    .doc-table th, .doc-table td { border: 1px solid rgba(148, 163, 184, 0.1); padding: 12px; text-align: left; font-size: 0.9rem; color: #cbd5e1; }
+    .doc-table th { background: rgba(15, 23, 42, 0.8); font-weight: bold; color: white; }
+    .doc-table tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+
+    /* 滚动平滑 */
+    html { scroll-behavior: smooth; }
+    section {
+        scroll-margin-top: 100px;
+    }
+</style>
+
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+
+    <aside class="hidden lg:block lg:col-span-1">
+        <div class="doc-sidebar glass-panel rounded-xl p-4">
+            <h4 class="text-white font-bold tech-font px-4 mb-4 text-sm tracking-widest">操作手册目录</h4>
+            <nav class="space-y-1">
+                <a href="#intro" class="doc-link">1. 系统简介</a>
+                <a href="#prep" class="doc-link">2. 环境检测</a>
+                <a href="#data" class="doc-link">3. 数据处理流水线</a>
+                <a href="#train" class="doc-link">4. 分析与训练</a>
+                <a href="#deploy" class="doc-link">5. 可视化部署</a>
+                <a href="#cheatsheet" class="doc-link">附录：文件速查表</a>
+            </nav>
+        </div>
+    </aside>
+
+    <div class="lg:col-span-3">
+        <div class="glass-panel p-10 rounded-2xl min-h-screen">
+
+            <div class="border-b border-white/10 pb-6 mb-6">
+                <h1 class="text-3xl font-bold text-white tech-font mb-2">Mamba-GNN 项目操作手册</h1>
+                <p class="text-sm text-slate-500">版本 v3.0.0 | 济南网约车数据专用版</p>
+            </div>
+
+            <section id="intro">
+                <h2>1. 系统简介</h2>
+                <p>
+                    本系统是一个基于 <strong>Mamba-GNN</strong> 的智能网约车需求预测平台。系统基于 <strong>济南市公共数据开放网</strong> 的真实网约车订单数据，通过数据合并、清洗与筛选，构建高精度的时空预测模型，并通过 Web 界面提供实时可视化服务。
+                </p>
+            </section>
+
+            <section id="prep">
+                <h2>2. 环境检测 (Environment)</h2>
+                <p>在开始数据处理前，必须确保 Python 环境及相关依赖（Torch, Flask, Mamba-SSM 等）已正确安装。</p>
+                <div class="code-block">
+                    <span class="cmd">python</span> env.py
+                </div>
+            </section>
+
+            <section id="data">
+                <h2>3. 数据处理流水线 (Data Pipeline)</h2>
+                <p>本版本采用了新的数据源处理方式，请严格按照以下步骤操作。</p>
+
+                <h3><span class="text-purple-400">Step 3.1</span> 数据采集 (Data Acquisition)</h3>
+                <p>
+                    前往 <strong>济南市公共数据开放网</strong>，下载网约车订单信息压缩包。
+                    <br>
+                    <strong>操作：</strong> 解压下载的压缩包，将获得的多个 <code>.csv</code> 原始文件放置于项目根目录或指定文件夹下。
+                </p>
+
+                <h3><span class="text-purple-400">Step 3.2</span> 数据合并 (Data Merging)</h3>
+                <p>将解压后的分散 CSV 文件合并为一个总的原始数据文件。</p>
+                <div class="code-block">
+                    <span class="cmd">python</span> merge.py
+                </div>
+                <p class="text-sm text-slate-400">
+                    <span class="text-emerald-400">✓ 输出结果：</span> 生成文件 <code>data/jinan_taxi.csv</code>，包含所有原始订单记录。
+                </p>
+
+                <h3><span class="text-purple-400">Step 3.3</span> 数据集终处理 (Final Processing)</h3>
+                <p>
+                    对合并后的数据进行初步清洗，处理格式错误或冗余数据，生成最终用于模型训练的高质量数据集。
+                    <strong>此步骤至关重要，直接决定模型效果。</strong>
+                </p>
+                <div class="code-block">
+                    <span class="cmd">python</span> final.py
+                </div>
+                <p class="text-sm text-slate-400">
+                    <span class="text-emerald-400">✓ 输出结果：</span> 生成文件 <code>data/finaldata.csv</code>。
+                </p>
+            </section>
+
+            <section id="train">
+                <h2>4. 业务分析与模型训练</h2>
+
+                <h3><span class="text-emerald-400">Step 4.1</span> 业务数据分析 (EDA)</h3>
+                <p>
+                    对处理好的最终数据集进行探索性分析，生成统计图表，帮助理解数据分布特征。
+                </p>
+                <div class="code-block">
+                    <span class="cmd">python</span> analysis.py
+                </div>
+
+                <h3><span class="text-emerald-400">Step 4.2</span> 模型训练 (Training)</h3>
+                <p>
+                    读取 <code>data/finaldata.csv</code>，构建图神经网络结构并使用 Mamba 模块进行时序特征提取。
+                    训练完成后会自动保存最优权重文件。
+                </p>
+                <div class="code-block">
+                    <span class="cmd">python</span> trainmodel.py
+                </div>
+                <p class="text-sm text-slate-400">
+                    <span class="text-emerald-400">✓ 输出结果：</span> 生成模型权重文件（如 <code>best_model_Mamba-GNN.pt</code>）。
+                </p>
+            </section>
+
+            <section id="deploy">
+                <h2>5. 可视化部署 (Visualization)</h2>
+                <h3><span class="text-cyan-400">Step 5.1</span> 安装所需js库</h3>
+                <p>下载好chart.js和tailwindcss.js，便于后端的本地可视化</p>
+                <div class="code-block">
+                    <span class="cmd">python</span> config.py
+                </div>
+
+                <h3><span class="text-cyan-400">Step 5.2</span> 启动可视化服务</h3>
+                <p>加载训练好的模型，启动 Flask 服务器。系统将提供交互式的网页界面展示预测结果。</p>
+                <div class="code-block">
+                    <span class="cmd">python</span> app.py
+                </div>
+                <p class="text-sm mt-2 text-emerald-400">✓ 成功启动后，浏览器访问: http://127.0.0.1:8080</p>
+            </section>
+
+            <section id="cheatsheet">
+                <h2>附录：文件功能速查表</h2>
+                <table class="doc-table">
+                    <thead>
+                    <tr>
+                        <th style="width: 30%">文件名</th>
+                        <th style="width: 50%">核心功能描述</th>
+                        <th style="width: 20%">执行顺序</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr>
+                        <td class="font-mono text-cyan-300">env.py</td>
+                        <td>查看当前 Python 环境与依赖库状态</td>
+                        <td>1</td>
+                    </tr>
+                    <tr>
+                        <td class="font-mono text-purple-300">merge.py</td>
+                        <td>合并济南公共数据解压后的多个 CSV 文件</td>
+                        <td>2</td>
+                    </tr>
+                    <tr>
+                        <td class="font-mono text-purple-300">final.py</td>
+                        <td>数据筛选与特征构建，生成 finaldata.csv</td>
+                        <td>3</td>
+                    </tr>
+                    <tr>
+                        <td class="font-mono text-emerald-300">analysis.py</td>
+                        <td>数据探索性分析 (EDA)</td>
+                        <td>4</td>
+                    </tr>
+                    <tr>
+                        <td class="font-mono text-emerald-300">trainmodel.py</td>
+                        <td>训练 Mamba-GNN 模型</td>
+                        <td>5</td>
+                    </tr>
+                    <tr>
+                        <td class="font-mono text-emerald-300">config.py</td>
+                        <td>安装本地js库</td>
+                        <td>6</td>
+                    </tr>
+                    <tr>
+                        <td class="font-mono text-cyan-300">app.py</td>
+                        <td>启动 Flask 可视化服务</td>
+                        <td>7</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </section>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

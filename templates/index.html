@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex flex-col items-center justify-center min-h-[75vh] text-center relative w-full">
+    <div class="absolute w-96 h-96 bg-cyan-500/10 rounded-full blur-[100px] -z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+    <div class="absolute w-72 h-72 bg-purple-600/10 rounded-full blur-[80px] -z-10 top-1/4 left-1/4"></div>
+
+    <div class="mb-4 inline-block px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 text-xs font-mono tracking-widest">
+        SYSTEM V3.0.0 · JINAN CITY DATASET
+    </div>
+    <h1 class="text-5xl md:text-7xl font-bold text-white tracking-wider tech-font mb-6 drop-shadow-lg">
+        MAMBA<span class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">GNN</span>
+    </h1>
+    <p class="text-lg md:text-xl text-slate-300 max-w-2xl leading-relaxed mb-10">
+        基于<span class="text-cyan-400">状态空间模型</span>与<span class="text-purple-400">图神经网络</span>的新一代预测引擎。<br>
+        打造毫秒级响应的城市交通大脑。
+    </p>
+
+    <div id="home-action-container" class="flex flex-wrap justify-center gap-5 mb-16 min-h-[60px]">
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 pt-10 border-t border-white/5 w-full max-w-4xl">
+        <div class="glass-panel p-6 rounded-2xl">
+            <div class="text-4xl font-bold text-white mb-2 tech-font">O(L)</div>
+            <div class="text-sm text-slate-400">线性计算复杂度</div>
+        </div>
+        <div class="glass-panel p-6 rounded-2xl">
+            <div class="text-4xl font-bold text-cyan-400 mb-2 tech-font" id="index-r2">99.05%</div>
+            <div class="text-sm text-slate-400">决定系数 (R²)</div>
+        </div>
+        <div class="glass-panel p-6 rounded-2xl">
+            <div class="text-4xl font-bold text-purple-400 mb-2 tech-font">Fast</div>
+            <div class="text-sm text-slate-400">高并发毫秒级推理</div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const container = document.getElementById('home-action-container');
+        let currentUser = null;
+        const tokenStr = localStorage.getItem('mamba_auth_token');
+
+        try {
+            if (tokenStr && tokenStr.startsWith('{')) {
+                currentUser = JSON.parse(tokenStr);
+            }
+        } catch(e) { console.error("解析 Token 失败"); }
+
+        // 按钮模版定义 (移除了次要按钮的判断，统一采用高亮渐变色样式)
+        const btnTemplate = (href, label, icon) => {
+            const baseClass = "px-8 py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold transition shadow-lg hover:shadow-cyan-500/40 transform hover:-translate-y-1 flex items-center gap-2";
+            return `<a href="${href}" class="${baseClass}"><i data-lucide="${icon}" class="w-5 h-5"></i>${label}</a>`;
+        };
+
+        let html = "";
+        if (!currentUser) {
+            // 未登录
+            html = btnTemplate('/login', '验证身份进入系统', 'shield-check');
+        } else {
+            const role = currentUser.role;
+            // 所有登录用户都可以进展示台
+            html += btnTemplate('/dashboard', '预测展示台', 'layout-dashboard');
+
+            if (role === 'admin' || role === 'super') {
+                // 高级及以上用户可以看到系统架构
+                html += btnTemplate('/system', '系统架构详情', 'component');
+            }
+
+            if (role === 'admin') {
+                // 只有管理员能从首页直达实验分析
+                html += btnTemplate('/analytics', '消融实验', 'flask-conical');
+                html += btnTemplate('/contrast', '对比实验', 'git-compare');
+            }
+        }
+
+        container.innerHTML = html;
+        if (window.lucide) lucide.createIcons();
+
+        // 动态加载 R2 指标
+        if (!(window.location.protocol.startsWith('file') || window.location.protocol.startsWith('blob'))) {
+            fetch('/api/data').then(r => r.json()).then(data => {
+                const r2Value = data.evaluation_groups.Fusion_Comparison['Mamba-GNN'].r2;
+                document.getElementById('index-r2').textContent = (parseFloat(r2Value.split('±')[0]) * 100).toFixed(2) + '%';
+            }).catch(() => {});
+        }
+    });
+</script>
+{% endblock %}

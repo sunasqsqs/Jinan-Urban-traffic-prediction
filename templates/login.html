@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .captcha-box {
+        background: repeating-linear-gradient(45deg, #0f172a, #0f172a 10px, #1e293b 10px, #1e293b 20px);
+        letter-spacing: 0.5rem;
+        user-select: none;
+    }
+    #loading-overlay {
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.3s ease;
+    }
+    #loading-overlay.active {
+        opacity: 1;
+        visibility: visible;
+    }
+</style>
+
+<div class="flex flex-col items-center justify-center min-h-[80vh] w-full py-8 relative">
+    <div class="absolute -right-20 -top-20 w-96 h-96 bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none"></div>
+    <div class="absolute -left-20 bottom-0 w-96 h-96 bg-purple-600/10 rounded-full blur-[100px] pointer-events-none"></div>
+
+    <div class="w-full max-w-5xl glass-panel rounded-2xl overflow-hidden flex flex-col md:flex-row shadow-2xl relative border border-slate-700/50">
+        <!-- 左侧展示 -->
+        <div class="hidden md:flex w-1/2 bg-slate-900/90 p-12 flex-col justify-between relative border-r border-slate-700/50 overflow-hidden">
+            <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.15) 1px, transparent 0); background-size: 24px 24px;"></div>
+            <div class="relative z-10">
+                <div class="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-cyan-500/10 border border-cyan-500/30 mb-6">
+                    <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+                <h2 class="text-3xl font-bold text-white tech-font tracking-widest mb-4">MAMBA<span class="text-cyan-400">GNN</span></h2>
+                <p class="text-slate-400 text-sm leading-relaxed mb-8">
+                    城市网约车需求时空预测系统。系统现已启用分级权限控制（RBAC），不同身份用户将获得不同的模块访问权限。
+                </p>
+                <div class="space-y-4">
+                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 flex justify-between items-center">
+                        <span class="text-sm font-bold text-red-400">管理员 (ADMIN)</span>
+                        <span class="text-xs text-slate-400">全系统所有模块访问权</span>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 flex justify-between items-center">
+                        <span class="text-sm font-bold text-purple-400">高级会员 (SUPER)</span>
+                        <span class="text-xs text-slate-400">架构解读 + 预测数据大屏</span>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 flex justify-between items-center">
+                        <span class="text-sm font-bold text-blue-400">普通用户 (NORMAL)</span>
+                        <span class="text-xs text-slate-400">仅预测数据大屏</span>
+                    </div>
+                </div>
+            </div>
+            <div class="relative z-10 mt-12">
+                <p class="text-xs text-slate-500 font-mono">SYSTEM BUILD V3.0.0 | RBAC ENABLED<br>&copy; 2026 INTELLIGENT TRAFFIC LAB.</p>
+            </div>
+        </div>
+
+        <!-- 右侧表单 -->
+        <div class="w-full md:w-1/2 p-10 md:p-14 relative bg-slate-900/40">
+            <div id="loading-overlay" class="absolute inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-r-2xl">
+                <svg class="w-12 h-12 text-cyan-500 animate-spin mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="text-cyan-400 font-mono text-sm tracking-widest animate-pulse">正在校验身份权限与分配环境...</p>
+            </div>
+
+            <div class="text-center md:text-left mb-10">
+                <h2 class="text-2xl font-bold text-white mb-2">系统身份验证</h2>
+                <p class="text-slate-400 text-sm">请输入您的通行账号与令牌</p>
+            </div>
+
+            <form id="loginForm" class="space-y-6">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">通行账号</label>
+                    <div class="relative group">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-5 w-5 text-slate-500 group-focus-within:text-cyan-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                        </div>
+                        <input type="text" id="username" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg pl-10 pr-4 py-3 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition placeholder-slate-600" placeholder="例如: admin / super / sunyq" required>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest">访问令牌 (密码)</label>
+                        <a href="#" onclick="showActionModal('reset'); return false;" class="text-xs text-cyan-500 hover:text-cyan-400 transition">忘记密码？</a>
+                    </div>
+                    <div class="relative group">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-5 w-5 text-slate-500 group-focus-within:text-cyan-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/></svg>
+                        </div>
+                        <input type="password" id="password" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg pl-10 pr-10 py-3 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition placeholder-slate-600" placeholder="••••••••" required>
+                        <button type="button" onclick="togglePassword()" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300">
+                            <svg id="eye-icon" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">安全验证</label>
+                    <div class="flex gap-4">
+                        <input type="text" id="captcha-input" class="w-2/3 bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition" placeholder="输入右侧代码" required>
+                        <div class="w-1/3 captcha-box rounded-lg flex items-center justify-center border border-slate-700 text-cyan-400 font-bold text-lg font-mono cursor-pointer" onclick="generateCaptcha()" title="点击刷新">
+                            <span id="captcha-text" class="transform -rotate-6">X7K9</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="error-msg" class="hidden bg-red-500/10 border border-red-500/50 text-red-400 text-sm px-4 py-2 rounded-lg flex items-center gap-2">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span id="error-text">验证码错误或账号密码不符</span>
+                </div>
+
+                <button type="submit" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3.5 rounded-lg transition shadow-lg shadow-cyan-500/20 transform hover:-translate-y-0.5 tracking-wider tech-font">
+                    授权登录
+                </button>
+            </form>
+
+            <div class="mt-8 text-center text-sm text-slate-500 pt-6 border-t border-slate-700/50">
+                尚未配置用户权限？ <a href="#" onclick="showActionModal('register'); return false;" class="text-cyan-400 hover:text-cyan-300 transition">申请新账号</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 提示框 -->
+<div id="sys-modal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-slate-950/80 backdrop-blur-sm opacity-0 transition-opacity duration-300">
+    <div class="bg-slate-900 border border-cyan-500/30 p-8 rounded-2xl shadow-[0_0_30px_rgba(34,211,238,0.15)] max-w-sm w-full text-center transform scale-95 transition-transform duration-300" id="sys-modal-content">
+        <div class="w-16 h-16 bg-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-cyan-500/30">
+            <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <h3 id="modal-title" class="text-xl font-bold text-white tech-font mb-2">操作成功</h3>
+        <p id="modal-desc" class="text-slate-400 text-sm mb-8 leading-relaxed">提示内容</p>
+        <button onclick="closeSysModal()" class="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-lg transition shadow-lg shadow-cyan-500/20">
+            知道了，返回登录
+        </button>
+    </div>
+</div>
+
+<!-- 操作表单框 (注册/重置) -->
+<div id="action-modal" class="fixed inset-0 z-[110] hidden flex items-center justify-center bg-slate-950/80 backdrop-blur-sm opacity-0 transition-opacity duration-300">
+    <div class="bg-slate-900 border border-cyan-500/30 p-8 rounded-2xl shadow-[0_0_30px_rgba(34,211,238,0.15)] max-w-sm w-full transform scale-95 transition-transform duration-300" id="action-modal-content">
+        <h3 id="action-modal-title" class="text-xl font-bold text-white tech-font mb-6 text-center">系统操作</h3>
+        <form id="action-modal-form" class="space-y-4 text-left">
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">系统账号</label>
+                <input type="text" id="action-username" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-cyan-500 focus:outline-none transition placeholder-slate-500" placeholder="输入用户名" required>
+            </div>
+            <div id="role-selector-container">
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">申请角色类型</label>
+                <select id="action-role" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-cyan-500 focus:outline-none transition">
+                    <option value="normal">普通用户 (仅预测展示)</option>
+                    <option value="super">高级会员 (系统架构+预测展示)</option>
+                </select>
+                <p class="text-[10px] text-slate-500 mt-1">* 提示: 系统限制外部申请管理员权限</p>
+            </div>
+            <div>
+                <label id="action-password-label" class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">设置密码</label>
+                <input type="password" id="action-password" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-cyan-500 focus:outline-none transition" required>
+            </div>
+            <div id="action-error" class="text-red-400 text-xs hidden text-center bg-red-500/10 py-1.5 rounded border border-red-500/30"></div>
+            <div class="flex gap-3 mt-8">
+                <button type="button" onclick="closeActionModal()" class="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg transition border border-slate-700">取消</button>
+                <button type="submit" id="action-submit-btn" class="w-1/2 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-lg transition shadow-lg shadow-cyan-500/20">确认</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // 带有角色权限的对象数据库
+    function getDB() {
+        try {
+            let data = localStorage.getItem('mamba_core_users_v2');
+            if (data) return JSON.parse(data);
+
+            // 初始化默认账户及权限
+            let init = {
+                'admin': { pwd: 'admin', role: 'admin' },
+                'super': { pwd: 'super', role: 'super' },
+                'sunyq': { pwd: 'sunyq', role: 'normal' }
+            };
+            localStorage.setItem('mamba_core_users_v2', JSON.stringify(init));
+            return init;
+        } catch (e) {
+            if (!window._memDB) window._memDB = {
+                'admin': { pwd: 'admin', role: 'admin' },
+                'super': { pwd: 'super', role: 'super' },
+                'sunyq': { pwd: 'sunyq', role: 'normal' }
+            };
+            return window._memDB;
+        }
+    }
+
+    function saveDB(dataObj) {
+        try { localStorage.setItem('mamba_core_users_v2', JSON.stringify(dataObj)); }
+        catch (e) { window._memDB = dataObj; }
+    }
+
+    getDB();
+
+    function togglePassword() {
+        const pwdInput = document.getElementById('password');
+        const eyeIcon = document.getElementById('eye-icon');
+        if (pwdInput.type === 'password') {
+            pwdInput.type = 'text';
+            eyeIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>`;
+        } else {
+            pwdInput.type = 'password';
+            eyeIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>`;
+        }
+    }
+
+    let currentCaptcha = "";
+    function generateCaptcha() {
+        const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        let captcha = "";
+        for (let i = 0; i < 4; i++) captcha += chars.charAt(Math.floor(Math.random() * chars.length));
+        currentCaptcha = captcha;
+        document.getElementById('captcha-text').innerText = captcha;
+        document.getElementById('captcha-text').style.transform = `rotate(${Math.random() * 20 - 10}deg)`;
+    }
+    generateCaptcha();
+
+    let currentActionType = '';
+    function showActionModal(type) {
+        currentActionType = type;
+        const isRegister = type === 'register';
+        document.getElementById('action-modal-title').innerText = isRegister ? '申请新账号' : '重置访问令牌';
+        document.getElementById('action-submit-btn').innerText = isRegister ? '立即注册' : '确认重置';
+        document.getElementById('action-password-label').innerText = isRegister ? '设置密码' : '设置新密码';
+
+        // 控制角色选择框的显示/隐藏
+        document.getElementById('role-selector-container').style.display = isRegister ? 'block' : 'none';
+
+        document.getElementById('action-username').value = '';
+        document.getElementById('action-password').value = '';
+        document.getElementById('action-error').classList.add('hidden');
+
+        const modal = document.getElementById('action-modal');
+        const content = document.getElementById('action-modal-content');
+        modal.classList.remove('hidden');
+        void modal.offsetWidth;
+        modal.classList.remove('opacity-0');
+        content.classList.remove('scale-95');
+    }
+
+    function closeActionModal() {
+        const modal = document.getElementById('action-modal');
+        const content = document.getElementById('action-modal-content');
+        modal.classList.add('opacity-0');
+        content.classList.add('scale-95');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+
+    function showSysModal(title, desc) {
+        document.getElementById('modal-title').innerText = title;
+        document.getElementById('modal-desc').innerText = desc;
+        const modal = document.getElementById('sys-modal');
+        const content = document.getElementById('sys-modal-content');
+        modal.classList.remove('hidden');
+        void modal.offsetWidth;
+        modal.classList.remove('opacity-0');
+        content.classList.remove('scale-95');
+    }
+
+    function closeSysModal() {
+        const modal = document.getElementById('sys-modal');
+        const content = document.getElementById('sys-modal-content');
+        modal.classList.add('opacity-0');
+        content.classList.add('scale-95');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+
+    document.getElementById('action-modal-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const username = document.getElementById('action-username').value.trim();
+        const password = document.getElementById('action-password').value.trim();
+        const errorEl = document.getElementById('action-error');
+        let db = getDB();
+
+        // 不允许注册或修改 admin 账户
+        if (username.toLowerCase() === 'admin') {
+            errorEl.innerText = '安全拦截：无法注册或操作最高管理员账号';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+
+        if (currentActionType === 'register') {
+            if (db.hasOwnProperty(username)) {
+                errorEl.innerText = '该账号已存在，请更换账号名';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const selectedRole = document.getElementById('action-role').value;
+            db[username] = { pwd: password, role: selectedRole };
+            saveDB(db);
+
+            closeActionModal();
+            const roleName = selectedRole === 'super' ? '高级会员 (SUPER)' : '普通用户 (NORMAL)';
+            showSysModal('注册成功', `新账号 [ ${username} ] 已成功注册为 ${roleName}！现在您可以返回页面进行登录。`);
+        } else if (currentActionType === 'reset') {
+            if (!db.hasOwnProperty(username)) {
+                errorEl.innerText = '该账号不存在，请先注册';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            // 保留原有角色只修改密码
+            db[username].pwd = password;
+            saveDB(db);
+
+            closeActionModal();
+            showSysModal('密码重置成功', `账号 [ ${username} ] 的密码已成功修改。现在您可以返回登录页面，使用新密码进行登录。`);
+        }
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const errorMsg = document.getElementById('error-msg');
+        const errorText = document.getElementById('error-text');
+        const usernameInput = document.getElementById('username').value.trim();
+        const passwordInput = document.getElementById('password').value.trim();
+        const inputCaptcha = document.getElementById('captcha-input').value.toUpperCase();
+
+        if (inputCaptcha !== currentCaptcha) {
+            errorText.innerText = '安全验证码输入错误，请重新输入';
+            errorMsg.classList.remove('hidden');
+            generateCaptcha();
+            document.getElementById('captcha-input').value = '';
+            return;
+        }
+
+        let db = getDB();
+        if (!db.hasOwnProperty(usernameInput)) {
+            errorText.innerText = '账号不存在，请点击右下方申请新账号';
+            errorMsg.classList.remove('hidden');
+            generateCaptcha();
+            document.getElementById('password').value = '';
+            document.getElementById('captcha-input').value = '';
+            return;
+        }
+
+        if (db[usernameInput].pwd !== passwordInput) {
+            errorText.innerText = '访问令牌 (密码) 错误，请核对';
+            errorMsg.classList.remove('hidden');
+            generateCaptcha();
+            document.getElementById('password').value = '';
+            document.getElementById('captcha-input').value = '';
+            return;
+        }
+
+        errorMsg.classList.add('hidden');
+        document.getElementById('loading-overlay').classList.add('active');
+
+        setTimeout(() => {
+            try {
+                // 将用户的账户和角色存储进 token 中，以便 base.html 读取进行权限分配
+                const tokenData = {
+                    username: usernameInput,
+                    role: db[usernameInput].role
+                };
+                localStorage.setItem('mamba_auth_token', JSON.stringify(tokenData));
+                sessionStorage.removeItem('mamba_auth_token');
+            } catch(e){}
+
+            // 登录后统一返回首页
+            window.location.href = '/';
+        }, 1500);
+    });
+</script>
+{% endblock %}
