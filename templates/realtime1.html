@@ -1,0 +1,503 @@
+{% extends "base.html" %}
+{% block content %}
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    /* 自定义滚动条，使其更优雅 */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* 热门区域列表选中样式优化 */
+    .region-item {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .region-item.active {
+        background: #f8fafc;
+        border-color: #3b82f6;
+        /* 增加更明显的左侧蓝色高亮条框，匹配UI图 */
+        box-shadow: inset 4px 0 0 0 #3b82f6, 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+    /* 强制重置Chart.js背景色 */
+    canvas { background-color: transparent !important; }
+</style>
+
+<div class="space-y-6 pb-12">
+
+    <!-- 头部说明 (完全复刻 dashboard 的大标题样式与排版) -->
+    <div class="mb-6 border-b border-gray-200 pb-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-600 text-xs font-mono mb-3">
+            <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+            REAL-TIME PREDICTION STREAM
+        </div>
+        <h3 class="text-3xl font-bold text-gray-800 tech-font mb-2">MAMBA & GNN 实时推演引擎</h3>
+        <p class="text-gray-500 text-sm">
+            设定预测步数后算法将在后台独立运行，您可以自由切换页面进行其他操作。基于双流架构动态捕捉系统对实际总体流量走势的超前拟合能力。
+        </p>
+    </div>
+
+    <!-- 操控区与进度面板 -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-medium text-slate-700">推演时间步:</label>
+                    <input type="number" id="stepsInput" value="50" min="1" max="500"
+                           class="w-20 px-2 py-1.5 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors">
+                </div>
+                <button id="btnStart" onclick="startPrediction()"
+                        class="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded shadow-sm hover:bg-blue-700 transition-colors">
+                    开始预测
+                </button>
+                <button id="btnStop" onclick="stopPrediction()" disabled
+                        class="px-4 py-1.5 bg-white border border-slate-300 text-rose-600 text-sm font-medium rounded shadow-sm hover:bg-rose-50 hover:border-rose-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    终止
+                </button>
+            </div>
+            <div class="flex items-center gap-3">
+                <span id="statusIndicator" class="w-2 h-2 rounded-full bg-slate-400"></span>
+                <span id="statusText" class="text-sm text-slate-600 font-medium">系统就绪，等待指令...</span>
+                <span class="text-slate-300">|</span>
+                <span class="flex items-center gap-1.5 text-sm text-slate-500 font-medium"><i data-lucide="loader-2" class="w-3.5 h-3.5"></i> 进度</span>
+                <span id="progressText" class="text-blue-600 font-mono text-sm bg-blue-50 px-2 py-0.5 rounded">0 / 0 步</span>
+            </div>
+        </div>
+
+        <!-- 进度条 -->
+        <div class="w-full bg-slate-100 rounded-full h-1.5 shadow-inner overflow-hidden">
+            <div id="progressBar" class="bg-blue-600 h-full rounded-full transition-all duration-300 relative" style="width: 0%">
+                <div class="absolute top-0 left-0 bottom-0 right-0 bg-white/20 animate-pulse"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 实时全局评价指标图表 (MSE, MAE, R²) -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div class="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                <i data-lucide="bar-chart-2" class="w-4 h-4 text-orange-500"></i>
+                <h5 class="text-sm font-bold text-slate-700">MSE 均方误差</h5>
+            </div>
+            <div class="p-4 w-full flex-grow min-h-[8rem]"><canvas id="mseChart"></canvas></div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div class="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                <i data-lucide="trending-down" class="w-4 h-4 text-emerald-500"></i>
+                <h5 class="text-sm font-bold text-slate-700">MAE 平均绝对误差</h5>
+            </div>
+            <div class="p-4 w-full flex-grow min-h-[8rem]"><canvas id="maeChart"></canvas></div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div class="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                <i data-lucide="target" class="w-4 h-4 text-blue-500"></i>
+                <h5 class="text-sm font-bold text-slate-700">R² 决定系数</h5>
+            </div>
+            <div class="p-4 w-full flex-grow min-h-[8rem]"><canvas id="r2Chart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- 顶层主图表：全城总体流量监控 -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+                <h4 class="text-base font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                    <i data-lucide="activity" class="w-4 h-4 text-indigo-500"></i> 全城交通流量大盘监测
+                </h4>
+            </div>
+            <div class="flex gap-4 text-xs font-semibold bg-white px-3 py-1.5 rounded-lg border border-slate-200">
+                <div class="flex items-center gap-2 text-slate-600"><span class="w-2.5 h-2.5 rounded bg-blue-500"></span> 真实流量</div>
+                <div class="flex items-center gap-2 text-slate-600"><span class="w-2.5 h-0.5 bg-amber-500 border border-amber-500"></span> 推演流量</div>
+            </div>
+        </div>
+        <div class="p-6 h-80 w-full">
+            <canvas id="rtChart"></canvas>
+        </div>
+    </div>
+
+    <!-- 下层布局：热点区域列表 + 选中区域的详情 -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- 左侧：实时热点区域 Top 5 -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden lg:col-span-4 flex flex-col h-full min-h-[500px]">
+            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                <h4 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="map-pin" class="w-4 h-4 text-rose-500"></i> 实时高流量枢纽
+                </h4>
+                <span class="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded shadow-sm">Top 5</span>
+            </div>
+            <!-- 修改为 flex-col 和 gap-3 搭配内部元素的 flex-1 以充满高度 -->
+            <div id="hotspotList" class="p-4 flex flex-col gap-3 flex-grow overflow-y-auto">
+                <div class="flex flex-col items-center justify-center h-48 text-slate-400 text-sm space-y-3">
+                    <i data-lucide="radio" class="w-8 h-8 animate-pulse text-slate-300"></i>
+                    <span>等待数据流接入...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：选中区域的详细指标追踪 -->
+        <div class="lg:col-span-8 flex flex-col h-full">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-[500px]">
+
+                <!-- 1. 标题区 -->
+                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h4 class="text-base font-bold text-slate-800 flex items-center gap-2 mb-2">
+                            <i data-lucide="crosshair" class="w-4 h-4 text-indigo-500"></i>
+                            <span id="currentRegionName" class="text-indigo-600">选择左侧区域</span>
+                            <span class="text-slate-400 font-normal text-sm ml-1">- 微观路网监测</span>
+                        </h4>
+                        <div class="flex flex-wrap items-center gap-2" id="regionBadges">
+                            <!-- 徽章将在 JS 中动态生成 -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-6 flex flex-col flex-grow">
+                    <!-- 2. 核心指标区 -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6" id="regionMetrics">
+                        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 flex justify-between items-center">
+                            <div>
+                                <div class="text-xs font-semibold text-slate-500 mb-1">区域预测准确率</div>
+                                <div class="text-2xl font-black text-slate-800" id="valAcc">--%</div>
+                            </div>
+                            <div class="p-2.5 bg-white rounded-lg border border-slate-100 shadow-sm text-blue-600"><i data-lucide="percent" class="w-5 h-5"></i></div>
+                        </div>
+                        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 flex justify-between items-center">
+                            <div>
+                                <div class="text-xs font-semibold text-slate-500 mb-1">当前 MAE</div>
+                                <div class="text-2xl font-black text-slate-800" id="valMae">--</div>
+                            </div>
+                            <div class="p-2.5 bg-white rounded-lg border border-slate-100 shadow-sm text-emerald-600"><i data-lucide="move-down-right" class="w-5 h-5"></i></div>
+                        </div>
+                    </div>
+
+                    <!-- 3. 图表区 (竖向排列) -->
+                    <div class="flex flex-col gap-6 flex-grow">
+                        <div class="flex flex-col flex-1 min-h-[14rem]">
+                            <h5 class="text-xs font-bold text-slate-500 mb-3 flex items-center gap-1.5 uppercase tracking-wider">
+                                <i data-lucide="line-chart" class="w-3.5 h-3.5"></i> 区域流量走势对比
+                            </h5>
+                            <div class="relative w-full flex-grow bg-slate-50/50 rounded-xl border border-slate-100 p-3"><canvas id="regionTrafficChart"></canvas></div>
+                        </div>
+                        <div class="flex flex-col flex-1 min-h-[14rem]">
+                            <h5 class="text-xs font-bold text-slate-500 mb-3 flex items-center gap-1.5 uppercase tracking-wider">
+                                <i data-lucide="bar-chart" class="w-3.5 h-3.5"></i> MAE 绝对误差监测
+                            </h5>
+                            <div class="relative w-full flex-grow bg-slate-50/50 rounded-xl border border-slate-100 p-3"><canvas id="regionErrorChart"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    lucide.createIcons();
+
+    // ================= 图表初始化 =================
+    Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
+    Chart.defaults.color = '#64748b'; // slate-500
+    Chart.defaults.plugins.tooltip.mode = 'index';
+    Chart.defaults.plugins.tooltip.intersect = false;
+    Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15, 23, 42, 0.9)'; // slate-900
+    Chart.defaults.plugins.tooltip.titleFont = { size: 13, family: 'system-ui' };
+    Chart.defaults.plugins.tooltip.padding = 10;
+    Chart.defaults.plugins.tooltip.cornerRadius = 8;
+
+    const commonGridOptions = {
+        color: '#f1f5f9', // slate-100
+        tickColor: 'transparent',
+        drawBorder: false
+    };
+
+    // 主流量大盘
+    const rtChart = new Chart(document.getElementById('rtChart').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: '真实发生流量',
+                    data: [],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                },
+                {
+                    label: '模型预测流量',
+                    data: [],
+                    borderColor: '#f59e0b',
+                    borderDash: [5, 5],
+                    tension: 0.4,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 0 },
+            scales: {
+                x: { display: true, ticks: { maxTicksLimit: 8, font: { size: 11 } }, grid: { display: false } },
+                y: { beginAtZero: true, grid: commonGridOptions }
+            },
+            plugins: { legend: { display: false } },
+            interaction: { mode: 'index', intersect: false }
+        }
+    });
+
+    // 顶部全局指标折线图
+    const commonMetricOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 0 },
+        scales: {
+            x: { display: true, ticks: { maxTicksLimit: 4, font: { size: 10 } }, grid: { display: false } },
+            y: { beginAtZero: false, ticks: { maxTicksLimit: 5, font: {size: 10} }, grid: commonGridOptions }
+        },
+        plugins: { legend: { display: false } },
+        layout: { padding: { top: 5, bottom: 5 } }
+    };
+
+    const mseChart = new Chart(document.getElementById('mseChart').getContext('2d'), {
+        type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.1)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0 }] }, options: commonMetricOptions
+    });
+    const maeChart = new Chart(document.getElementById('maeChart').getContext('2d'), {
+        type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0 }] }, options: commonMetricOptions
+    });
+    const r2Chart = new Chart(document.getElementById('r2Chart').getContext('2d'), {
+        type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0 }] }, options: commonMetricOptions
+    });
+
+    // 区域子图表
+    const regionTrafficChart = new Chart(document.getElementById('regionTrafficChart'), {
+        type: 'line',
+        data: { labels: [], datasets: [
+            { label: '真实', data: [], borderColor: '#3b82f6', tension: 0.4, borderWidth: 2, pointRadius: 1, backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true },
+            { label: '预测', data: [], borderColor: '#f59e0b', borderDash: [4, 4], tension: 0.4, borderWidth: 2, pointRadius: 1 }
+        ]},
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 0 },
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { display: true, ticks: { maxTicksLimit: 6, font: { size: 10 } }, grid: { display: false } },
+                y: { beginAtZero: true, grid: commonGridOptions }
+            }
+        }
+    });
+
+    const regionErrorChart = new Chart(document.getElementById('regionErrorChart'), {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'MAE', data: [], backgroundColor: 'rgba(244, 63, 94, 0.8)', hoverBackgroundColor: 'rgba(225, 29, 72, 1)', borderRadius: 2 }]},
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 0 },
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { display: true, ticks: { maxTicksLimit: 6, font: { size: 10 } }, grid: { display: false } },
+                y: { beginAtZero: true, grid: commonGridOptions }
+            }
+        }
+    });
+
+    // ================= 状态管理与同步逻辑 =================
+    let regionHistory = {};
+    let activeRegionId = null;
+    let latestHotspotsData = [];
+
+    function startPrediction() {
+        const steps = document.getElementById('stepsInput').value;
+        fetch('/api/realtime/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ steps: parseInt(steps) })
+        }).then(() => pollSync());
+    }
+
+    function stopPrediction() {
+        fetch('/api/realtime/stop', { method: 'POST' }).then(() => pollSync());
+    }
+
+    function updateUIControls(status) {
+        const btnStart = document.getElementById('btnStart');
+        const btnStop = document.getElementById('btnStop');
+        const inputSteps = document.getElementById('stepsInput');
+        const statusInd = document.getElementById('statusIndicator');
+        const statusTxt = document.getElementById('statusText');
+
+        inputSteps.disabled = status.is_running;
+        btnStart.disabled = status.is_running;
+        btnStop.disabled = !status.is_running;
+
+        if (status.is_running) {
+            statusInd.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse";
+            statusTxt.innerText = "后台推演中...";
+            statusTxt.className = "text-blue-600 font-medium text-sm";
+        } else if (status.is_finished) {
+            statusInd.className = "w-2 h-2 rounded-full bg-emerald-500";
+            statusTxt.innerText = "推演完毕";
+            statusTxt.className = "text-emerald-600 font-medium text-sm";
+        } else if (status.current_step > 0) {
+            statusInd.className = "w-2 h-2 rounded-full bg-amber-500";
+            statusTxt.innerText = "手动终止";
+            statusTxt.className = "text-amber-600 font-medium text-sm";
+        } else {
+            statusInd.className = "w-2 h-2 rounded-full bg-slate-400";
+            statusTxt.innerText = "系统就绪，等待指令...";
+            statusTxt.className = "text-slate-600 font-medium text-sm";
+        }
+
+        // 进度条
+        const percent = status.target_steps > 0 ? Math.min(100, (status.current_step / status.target_steps) * 100) : 0;
+        document.getElementById('progressBar').style.width = `${percent}%`;
+        document.getElementById('progressText').innerText = `${status.current_step} / ${status.target_steps} 步`;
+    }
+
+    function rebuildRegionHistory(history) {
+        regionHistory = {};
+        history.forEach(step => {
+            if(step.hotspots) {
+                step.hotspots.forEach(h => {
+                    if (!regionHistory[h.id]) {
+                        regionHistory[h.id] = { time: [], true: [], pred: [], error: [], acc: [] };
+                    }
+                    const rh = regionHistory[h.id];
+                    rh.time.push(step.timestamp);
+                    rh.true.push(h.true);
+                    rh.pred.push(h.pred);
+                    rh.error.push(h.mae);
+                    rh.acc.push(h.accuracy);
+                });
+            }
+        });
+    }
+
+    function renderHotspotsUI(latestHotspots) {
+        latestHotspotsData = latestHotspots;
+        const container = document.getElementById('hotspotList');
+        if (!latestHotspots || latestHotspots.length === 0) return;
+
+        // 核心要求：默认显示第一热门地点。如果当前选中的地点掉出榜单，自动切换到榜首
+        const currentIds = latestHotspots.map(h => h.id);
+        if (!activeRegionId || !currentIds.includes(activeRegionId)) {
+            activeRegionId = latestHotspots[0].id;
+        }
+
+        container.innerHTML = '';
+        latestHotspots.forEach((spot, index) => {
+            let isSelected = activeRegionId === spot.id;
+
+            const item = document.createElement('div');
+            // 加上 flex-1 讓每一項平均佔滿容器高度，並透過 flex 垂直置中內部元素
+            item.className = `region-item cursor-pointer px-4 py-2 rounded-xl border flex items-center shadow-sm flex-1 ${isSelected ? 'active border-blue-400' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-md'}`;
+            item.onclick = () => {
+                activeRegionId = spot.id;
+                renderHotspotsUI(latestHotspots);
+                updateRegionDetailsPanel();
+            };
+
+            const rankColors = ['bg-rose-500', 'bg-orange-500', 'bg-amber-500', 'bg-slate-400', 'bg-slate-300'];
+            const rankColor = rankColors[index] || 'bg-slate-300';
+
+            item.innerHTML = `
+                <div class="flex items-center gap-4 w-full">
+                    <div class="w-7 h-7 rounded-full ${rankColor} text-white flex items-center justify-center text-sm font-bold shadow-sm flex-shrink-0">
+                        ${index + 1}
+                    </div>
+                    <div class="font-bold text-slate-800 text-sm whitespace-normal break-words leading-tight flex-grow">
+                        ${spot.id}
+                    </div>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+        updateRegionDetailsPanel();
+    }
+
+    function updateRegionDetailsPanel() {
+        if (!activeRegionId || !regionHistory[activeRegionId]) return;
+        document.getElementById('currentRegionName').innerText = activeRegionId;
+
+        const rh = regionHistory[activeRegionId];
+        regionTrafficChart.data.labels = rh.time;
+        regionTrafficChart.data.datasets[0].data = rh.true;
+        regionTrafficChart.data.datasets[1].data = rh.pred;
+        regionTrafficChart.update();
+
+        regionErrorChart.data.labels = rh.time;
+        regionErrorChart.data.datasets[0].data = rh.error;
+        regionErrorChart.update();
+
+        if(rh.acc.length > 0) {
+            document.getElementById('valAcc').innerText = rh.acc[rh.acc.length - 1] + '%';
+            document.getElementById('valMae').innerText = rh.error[rh.error.length - 1];
+        }
+
+        // 更新徽章
+        const currentSpotData = latestHotspotsData.find(s => s.id === activeRegionId);
+        const badgesContainer = document.getElementById('regionBadges');
+        if (currentSpotData && badgesContainer) {
+            badgesContainer.innerHTML = `
+                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">
+                    真实流量: ${currentSpotData.true}
+                </span>
+                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 shadow-sm">
+                    预测流量: ${currentSpotData.pred}
+                </span>
+                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-200 shadow-sm">
+                    准确率: ${currentSpotData.accuracy}%
+                </span>
+            `;
+        }
+    }
+
+    function pollSync() {
+        fetch('/api/realtime/sync')
+            .then(res => res.json())
+            .then(data => {
+                updateUIControls(data);
+
+                // 更新图表数据
+                if (data.history && data.history.length > 0) {
+                    const times = data.history.map(d => d.timestamp);
+                    const trueVals = data.history.map(d => d.true_val);
+                    const predVals = data.history.map(d => d.pred_val);
+
+                    rtChart.data.labels = times;
+                    rtChart.data.datasets[0].data = trueVals;
+                    rtChart.data.datasets[1].data = predVals;
+                    rtChart.update();
+
+                    mseChart.data.labels = times; mseChart.data.datasets[0].data = data.metrics_history.mse; mseChart.update();
+                    maeChart.data.labels = times; maeChart.data.datasets[0].data = data.metrics_history.mae; maeChart.update();
+                    r2Chart.data.labels = times; r2Chart.data.datasets[0].data = data.metrics_history.r2; r2Chart.update();
+
+                    // 重建区域历史，保证切换页面回来后数据完好
+                    rebuildRegionHistory(data.history);
+                    renderHotspotsUI(data.history[data.history.length - 1].hotspots);
+                }
+            })
+            .catch(e => console.error("同步失败", e));
+    }
+
+    // 页面加载时执行一次同步，并设置定时器
+    pollSync();
+    setInterval(pollSync, 1000); // 1秒同步一次后台最新状态
+
+</script>
+{% endblock %}

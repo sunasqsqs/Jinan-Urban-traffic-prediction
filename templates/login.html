@@ -2,7 +2,7 @@
 {% block content %}
 <style>
     .captcha-box {
-        background: repeating-linear-gradient(45deg, #0f172a, #0f172a 10px, #1e293b 10px, #1e293b 20px);
+        background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 10px, #f1f5f9 10px, #f1f5f9 20px);
         letter-spacing: 0.5rem;
         user-select: none;
     }
@@ -18,162 +18,160 @@
 </style>
 
 <div class="flex flex-col items-center justify-center min-h-[80vh] w-full py-8 relative">
-    <div class="absolute -right-20 -top-20 w-96 h-96 bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none"></div>
-    <div class="absolute -left-20 bottom-0 w-96 h-96 bg-purple-600/10 rounded-full blur-[100px] pointer-events-none"></div>
+    <div class="absolute -right-20 -top-20 w-96 h-96 bg-blue-100 rounded-full blur-[100px] pointer-events-none"></div>
+    <div class="absolute -left-20 bottom-0 w-96 h-96 bg-indigo-100 rounded-full blur-[100px] pointer-events-none"></div>
 
-    <div class="w-full max-w-5xl glass-panel rounded-2xl overflow-hidden flex flex-col md:flex-row shadow-2xl relative border border-slate-700/50">
+    <div class="w-full max-w-5xl bg-white rounded-2xl overflow-hidden flex flex-col md:flex-row shadow-xl relative border border-gray-200">
         <!-- 左侧展示 -->
-        <div class="hidden md:flex w-1/2 bg-slate-900/90 p-12 flex-col justify-between relative border-r border-slate-700/50 overflow-hidden">
-            <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.15) 1px, transparent 0); background-size: 24px 24px;"></div>
+        <div class="hidden md:flex w-1/2 bg-blue-600 p-12 flex-col justify-between relative overflow-hidden">
+            <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.8) 1px, transparent 0); background-size: 24px 24px;"></div>
             <div class="relative z-10">
-                <div class="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-cyan-500/10 border border-cyan-500/30 mb-6">
-                    <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                <div class="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-white/10 border border-white/20 mb-6 shadow-sm">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                 </div>
-                <h2 class="text-3xl font-bold text-white tech-font tracking-widest mb-4">MAMBA<span class="text-cyan-400">GNN</span></h2>
-                <p class="text-slate-400 text-sm leading-relaxed mb-8">
+                <h2 class="text-3xl font-bold text-white tech-font tracking-widest mb-4">MAMBA<span class="text-blue-200">GNN</span></h2>
+                <p class="text-blue-100 text-sm leading-relaxed mb-8">
                     城市网约车需求时空预测系统。系统现已启用分级权限控制（RBAC），不同身份用户将获得不同的模块访问权限。
                 </p>
                 <div class="space-y-4">
-                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 flex justify-between items-center">
-                        <span class="text-sm font-bold text-red-400">管理员 (ADMIN)</span>
-                        <span class="text-xs text-slate-400">全系统所有模块访问权</span>
+                    <div class="bg-blue-700/50 rounded-lg p-3 border border-blue-500/50 flex justify-between items-center backdrop-blur-sm">
+                        <span class="text-sm font-bold text-red-200">管理员 (ADMIN)</span>
+                        <span class="text-xs text-blue-200">全系统所有模块访问权</span>
                     </div>
-                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 flex justify-between items-center">
-                        <span class="text-sm font-bold text-purple-400">高级会员 (SUPER)</span>
-                        <span class="text-xs text-slate-400">架构解读 + 预测数据大屏</span>
+                    <div class="bg-blue-700/50 rounded-lg p-3 border border-blue-500/50 flex justify-between items-center backdrop-blur-sm">
+                        <span class="text-sm font-bold text-indigo-200">高级会员 (SUPER)</span>
+                        <span class="text-xs text-blue-200">架构解读 + 预测数据大屏</span>
                     </div>
-                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 flex justify-between items-center">
-                        <span class="text-sm font-bold text-blue-400">普通用户 (NORMAL)</span>
-                        <span class="text-xs text-slate-400">仅预测数据大屏</span>
+                    <div class="bg-blue-700/50 rounded-lg p-3 border border-blue-500/50 flex justify-between items-center backdrop-blur-sm">
+                        <span class="text-sm font-bold text-cyan-200">普通用户 (NORMAL)</span>
+                        <span class="text-xs text-blue-200">仅预测数据大屏</span>
                     </div>
                 </div>
             </div>
             <div class="relative z-10 mt-12">
-                <p class="text-xs text-slate-500 font-mono">SYSTEM BUILD V3.0.0 | RBAC ENABLED<br>&copy; 2026 INTELLIGENT TRAFFIC LAB.</p>
+                <p class="text-xs text-blue-300 font-mono">SYSTEM BUILD V3.0.0 | RBAC ENABLED<br>&copy; 2026 INTELLIGENT TRAFFIC LAB.</p>
             </div>
         </div>
 
         <!-- 右侧表单 -->
-        <div class="w-full md:w-1/2 p-10 md:p-14 relative bg-slate-900/40">
-            <div id="loading-overlay" class="absolute inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-r-2xl">
-                <svg class="w-12 h-12 text-cyan-500 animate-spin mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <div class="w-full md:w-1/2 p-10 md:p-14 relative bg-white">
+            <div id="loading-overlay" class="absolute inset-0 bg-white/90 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-r-2xl">
+                <svg class="w-12 h-12 text-blue-600 animate-spin mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <p class="text-cyan-400 font-mono text-sm tracking-widest animate-pulse">正在校验身份权限与分配环境...</p>
+                <p class="text-blue-600 font-mono text-sm tracking-widest animate-pulse">正在校验身份权限与分配环境...</p>
             </div>
 
             <div class="text-center md:text-left mb-10">
-                <h2 class="text-2xl font-bold text-white mb-2">系统身份验证</h2>
-                <p class="text-slate-400 text-sm">请输入您的通行账号与令牌</p>
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">系统身份验证</h2>
+                <p class="text-gray-500 text-sm">请输入您的通行账号与令牌</p>
             </div>
 
             <form id="loginForm" class="space-y-6">
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">通行账号</label>
+                    <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">通行账号</label>
                     <div class="relative group">
                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg class="h-5 w-5 text-slate-500 group-focus-within:text-cyan-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                            <svg class="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
                         </div>
-                        <input type="text" id="username" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg pl-10 pr-4 py-3 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition placeholder-slate-600" placeholder="例如: admin / super / sunyq" required>
+                        <input type="text" id="username" class="w-full bg-gray-50 border border-gray-300 rounded-lg pl-10 pr-4 py-3 text-gray-800 focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition placeholder-gray-400" placeholder="例如: admin / super / sunyq" required>
                     </div>
                 </div>
 
                 <div>
                     <div class="flex justify-between items-center mb-2">
-                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest">访问令牌 (密码)</label>
-                        <a href="#" onclick="showActionModal('reset'); return false;" class="text-xs text-cyan-500 hover:text-cyan-400 transition">忘记密码？</a>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest">访问令牌 (密码)</label>
+                        <a href="#" onclick="showActionModal('reset'); return false;" class="text-xs text-blue-500 hover:text-blue-600 transition">忘记密码？</a>
                     </div>
                     <div class="relative group">
                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg class="h-5 w-5 text-slate-500 group-focus-within:text-cyan-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/></svg>
+                            <svg class="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/></svg>
                         </div>
-                        <input type="password" id="password" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg pl-10 pr-10 py-3 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition placeholder-slate-600" placeholder="••••••••" required>
-                        <button type="button" onclick="togglePassword()" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300">
+                        <input type="password" id="password" class="w-full bg-gray-50 border border-gray-300 rounded-lg pl-10 pr-10 py-3 text-gray-800 focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition placeholder-gray-400" placeholder="••••••••" required>
+                        <button type="button" onclick="togglePassword()" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600">
                             <svg id="eye-icon" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                         </button>
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">安全验证</label>
+                    <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">安全验证</label>
                     <div class="flex gap-4">
-                        <input type="text" id="captcha-input" class="w-2/3 bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition" placeholder="输入右侧代码" required>
-                        <div class="w-1/3 captcha-box rounded-lg flex items-center justify-center border border-slate-700 text-cyan-400 font-bold text-lg font-mono cursor-pointer" onclick="generateCaptcha()" title="点击刷新">
+                        <input type="text" id="captcha-input" class="w-2/3 bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-800 focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 transition" placeholder="输入右侧代码" required>
+                        <div class="w-1/3 captcha-box rounded-lg flex items-center justify-center border border-gray-300 text-blue-600 font-bold text-lg font-mono cursor-pointer" onclick="generateCaptcha()" title="点击刷新">
                             <span id="captcha-text" class="transform -rotate-6">X7K9</span>
                         </div>
                     </div>
                 </div>
 
-                <div id="error-msg" class="hidden bg-red-500/10 border border-red-500/50 text-red-400 text-sm px-4 py-2 rounded-lg flex items-center gap-2">
+                <div id="error-msg" class="hidden bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2 rounded-lg flex items-center gap-2">
                     <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     <span id="error-text">验证码错误或账号密码不符</span>
                 </div>
 
-                <button type="submit" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3.5 rounded-lg transition shadow-lg shadow-cyan-500/20 transform hover:-translate-y-0.5 tracking-wider tech-font">
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-lg transition shadow-md hover:shadow-lg transform hover:-translate-y-0.5 tracking-wider tech-font">
                     授权登录
                 </button>
             </form>
 
-            <div class="mt-8 text-center text-sm text-slate-500 pt-6 border-t border-slate-700/50">
-                尚未配置用户权限？ <a href="#" onclick="showActionModal('register'); return false;" class="text-cyan-400 hover:text-cyan-300 transition">申请新账号</a>
+            <div class="mt-8 text-center text-sm text-gray-500 pt-6 border-t border-gray-200">
+                尚未配置用户权限？ <a href="#" onclick="showActionModal('register'); return false;" class="text-blue-600 hover:text-blue-700 font-bold transition">申请新账号</a>
             </div>
         </div>
     </div>
 </div>
 
 <!-- 提示框 -->
-<div id="sys-modal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-slate-950/80 backdrop-blur-sm opacity-0 transition-opacity duration-300">
-    <div class="bg-slate-900 border border-cyan-500/30 p-8 rounded-2xl shadow-[0_0_30px_rgba(34,211,238,0.15)] max-w-sm w-full text-center transform scale-95 transition-transform duration-300" id="sys-modal-content">
-        <div class="w-16 h-16 bg-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-cyan-500/30">
-            <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+<div id="sys-modal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-gray-900/60 backdrop-blur-sm opacity-0 transition-opacity duration-300">
+    <div class="bg-white border border-gray-200 p-8 rounded-2xl shadow-xl max-w-sm w-full text-center transform scale-95 transition-transform duration-300" id="sys-modal-content">
+        <div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-100">
+            <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
         </div>
-        <h3 id="modal-title" class="text-xl font-bold text-white tech-font mb-2">操作成功</h3>
-        <p id="modal-desc" class="text-slate-400 text-sm mb-8 leading-relaxed">提示内容</p>
-        <button onclick="closeSysModal()" class="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-lg transition shadow-lg shadow-cyan-500/20">
+        <h3 id="modal-title" class="text-xl font-bold text-gray-800 tech-font mb-2">操作成功</h3>
+        <p id="modal-desc" class="text-gray-500 text-sm mb-8 leading-relaxed">提示内容</p>
+        <button onclick="closeSysModal()" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition shadow-md">
             知道了，返回登录
         </button>
     </div>
 </div>
 
-<!-- 操作表单框 (注册/重置) -->
-<div id="action-modal" class="fixed inset-0 z-[110] hidden flex items-center justify-center bg-slate-950/80 backdrop-blur-sm opacity-0 transition-opacity duration-300">
-    <div class="bg-slate-900 border border-cyan-500/30 p-8 rounded-2xl shadow-[0_0_30px_rgba(34,211,238,0.15)] max-w-sm w-full transform scale-95 transition-transform duration-300" id="action-modal-content">
-        <h3 id="action-modal-title" class="text-xl font-bold text-white tech-font mb-6 text-center">系统操作</h3>
+<!-- 操作表单框 -->
+<div id="action-modal" class="fixed inset-0 z-[110] hidden flex items-center justify-center bg-gray-900/60 backdrop-blur-sm opacity-0 transition-opacity duration-300">
+    <div class="bg-white border border-gray-200 p-8 rounded-2xl shadow-xl max-w-sm w-full transform scale-95 transition-transform duration-300" id="action-modal-content">
+        <h3 id="action-modal-title" class="text-xl font-bold text-gray-800 tech-font mb-6 text-center">系统操作</h3>
         <form id="action-modal-form" class="space-y-4 text-left">
             <div>
-                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">系统账号</label>
-                <input type="text" id="action-username" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-cyan-500 focus:outline-none transition placeholder-slate-500" placeholder="输入用户名" required>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">系统账号</label>
+                <input type="text" id="action-username" class="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800 focus:border-blue-500 focus:bg-white focus:outline-none transition placeholder-gray-400" placeholder="输入用户名" required>
             </div>
             <div id="role-selector-container">
-                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">申请角色类型</label>
-                <select id="action-role" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-cyan-500 focus:outline-none transition">
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">申请角色类型</label>
+                <select id="action-role" class="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800 focus:border-blue-500 focus:bg-white focus:outline-none transition">
                     <option value="normal">普通用户 (仅预测展示)</option>
                     <option value="super">高级会员 (系统架构+预测展示)</option>
                 </select>
-                <p class="text-[10px] text-slate-500 mt-1">* 提示: 系统限制外部申请管理员权限</p>
+                <p class="text-[10px] text-gray-400 mt-1">* 提示: 系统限制外部申请管理员权限</p>
             </div>
             <div>
-                <label id="action-password-label" class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">设置密码</label>
-                <input type="password" id="action-password" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:border-cyan-500 focus:outline-none transition" required>
+                <label id="action-password-label" class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">设置密码</label>
+                <input type="password" id="action-password" class="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800 focus:border-blue-500 focus:bg-white focus:outline-none transition" required>
             </div>
-            <div id="action-error" class="text-red-400 text-xs hidden text-center bg-red-500/10 py-1.5 rounded border border-red-500/30"></div>
+            <div id="action-error" class="text-red-600 text-xs hidden text-center bg-red-50 py-1.5 rounded border border-red-200"></div>
             <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeActionModal()" class="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg transition border border-slate-700">取消</button>
-                <button type="submit" id="action-submit-btn" class="w-1/2 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-lg transition shadow-lg shadow-cyan-500/20">确认</button>
+                <button type="button" onclick="closeActionModal()" class="w-1/2 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg transition border border-gray-300">取消</button>
+                <button type="submit" id="action-submit-btn" class="w-1/2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition shadow-md">确认</button>
             </div>
         </form>
     </div>
 </div>
 
 <script>
-    // 带有角色权限的对象数据库
     function getDB() {
         try {
             let data = localStorage.getItem('mamba_core_users_v2');
             if (data) return JSON.parse(data);
 
-            // 初始化默认账户及权限
             let init = {
                 'admin': { pwd: 'admin', role: 'admin' },
                 'super': { pwd: 'super', role: 'super' },
@@ -229,7 +227,6 @@
         document.getElementById('action-submit-btn').innerText = isRegister ? '立即注册' : '确认重置';
         document.getElementById('action-password-label').innerText = isRegister ? '设置密码' : '设置新密码';
 
-        // 控制角色选择框的显示/隐藏
         document.getElementById('role-selector-container').style.display = isRegister ? 'block' : 'none';
 
         document.getElementById('action-username').value = '';
@@ -278,7 +275,6 @@
         const errorEl = document.getElementById('action-error');
         let db = getDB();
 
-        // 不允许注册或修改 admin 账户
         if (username.toLowerCase() === 'admin') {
             errorEl.innerText = '安全拦截：无法注册或操作最高管理员账号';
             errorEl.classList.remove('hidden');
@@ -306,7 +302,6 @@
                 return;
             }
 
-            // 保留原有角色只修改密码
             db[username].pwd = password;
             saveDB(db);
 
@@ -356,7 +351,6 @@
 
         setTimeout(() => {
             try {
-                // 将用户的账户和角色存储进 token 中，以便 base.html 读取进行权限分配
                 const tokenData = {
                     username: usernameInput,
                     role: db[usernameInput].role
@@ -365,7 +359,6 @@
                 sessionStorage.removeItem('mamba_auth_token');
             } catch(e){}
 
-            // 登录后统一返回首页
             window.location.href = '/';
         }, 1500);
     });

@@ -1,0 +1,963 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- 引入 Leaflet 地图样式与 JS 库 -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    /* 优雅自定义滚动条 */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* Leaflet 地图容器尺寸与流光边框 */
+    #leafletMap {
+        height: 450px;
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+        z-index: 10;
+        transition: all 0.3s ease;
+    }
+
+    /* 热门区域列表选中样式优化 */
+    .region-item {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .region-item.active {
+        background: #f8fafc;
+        border-color: #3b82f6;
+        box-shadow: inset 4px 0 0 0 #3b82f6, 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    canvas { background-color: transparent !important; }
+
+    /* 修改 Leaflet 默认弹出层样式使其融入 UI 风格 */
+    .leaflet-popup-content-wrapper {
+        border-radius: 8px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        border: 1px solid #e2e8f0;
+    }
+</style>
+
+<div class="space-y-6 pb-12">
+
+    <!-- 头部说明 -->
+    <div class="mb-6 border-b border-gray-200 pb-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-600 text-xs font-mono mb-3">
+            <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+            SPATIOTEMPORAL GRAPH NEURAL WORKBENCH
+        </div>
+        <h3 class="text-3xl font-bold text-gray-800 tech-font mb-2">MAMBA-GNN 地理空间实时推演矩阵</h3>
+        <p class="text-gray-500 text-sm">
+            实时监控城市流量，点击地图任意区域即可自动锁定该网格并查看深度研判曲线，再次点击即可取消锁定。
+        </p>
+    </div>
+
+    <!-- 操控区与进度面板 -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-medium text-slate-700">推演时间步:</label>
+                    <input type="number" id="stepsInput" value="50" min="1" max="100"
+                           class="w-20 px-2 py-1.5 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors">
+                </div>
+                <!-- 左侧按钮：开始预测/重新预测 -->
+                <button id="btnStart" onclick="startPrediction()"
+                        class="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded shadow-sm hover:bg-blue-700 transition-colors">
+                    开始预测
+                </button>
+                <!-- 中间按钮：终止 -->
+                <button id="btnStop" onclick="stopPrediction()" disabled
+                        class="px-4 py-1.5 bg-white border border-slate-300 text-rose-600 text-sm font-medium rounded shadow-sm hover:bg-rose-50 hover:border-rose-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    终止
+                </button>
+                <!-- 右侧按钮：继续预测 -->
+                <button id="btnContinue" onclick="continuePrediction()" disabled
+                        class="px-4 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded shadow-sm hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    继续预测
+                </button>
+            </div>
+            <div class="flex items-center gap-3">
+                <span id="statusIndicator" class="w-2 h-2 rounded-full bg-slate-400"></span>
+                <span id="statusText" class="text-sm text-slate-600 font-medium">系统就绪，等待指令...</span>
+                <span class="text-slate-300">|</span>
+                <span class="flex items-center gap-1.5 text-sm text-slate-500 font-medium"><i data-lucide="loader-2" class="w-3.5 h-3.5"></i> 进度</span>
+                <span id="progressText" class="text-blue-600 font-mono text-sm bg-blue-50 px-2 py-0.5 rounded">0 / 0 步</span>
+            </div>
+        </div>
+
+        <!-- 进度条 -->
+        <div class="w-full bg-slate-100 rounded-full h-1.5 shadow-inner overflow-hidden">
+            <div id="progressBar" class="bg-blue-600 h-full rounded-full transition-all duration-300 relative" style="width: 0%">
+                <div class="absolute top-0 left-0 bottom-0 right-0 bg-white/20 animate-pulse"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 即时全市综合评估指标 -->
+    <div id="globalMetricsContainer" class="grid grid-cols-1 sm:grid-cols-3 gap-6 transition-all duration-300">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                <i data-lucide="bar-chart-2" class="w-4 h-4 text-orange-500"></i>
+                <h5 class="text-sm font-bold text-slate-700">全市大盘 MSE</h5>
+            </div>
+            <div class="p-4 w-full h-24"><canvas id="mseChart"></canvas></div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                <i data-lucide="trending-down" class="w-4 h-4 text-emerald-500"></i>
+                <h5 class="text-sm font-bold text-slate-700">全市大盘 MAE</h5>
+            </div>
+            <div class="p-4 w-full h-24"><canvas id="maeChart"></canvas></div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                <i data-lucide="target" class="w-4 h-4 text-blue-500"></i>
+                <h5 class="text-sm font-bold text-slate-700">全市大盘 R²</h5>
+            </div>
+            <div class="p-4 w-full h-24"><canvas id="r2Chart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- 顶层主图表：全城总体流量监控 -->
+    <div id="globalTrafficContainer" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300">
+        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+                <h4 class="text-base font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                    <i data-lucide="activity" class="w-4 h-4 text-indigo-500"></i> 全城交通流量大盘监测
+                </h4>
+            </div>
+            <div class="flex gap-4 text-xs font-semibold bg-white px-3 py-1.5 rounded-lg border border-slate-200">
+                <div class="flex items-center gap-2 text-slate-600"><span class="w-2.5 h-2.5 rounded bg-blue-500"></span> 真实大盘</div>
+                <div class="flex items-center gap-2 text-slate-600"><span class="w-2.5 h-0.5 bg-amber-500 border border-amber-500"></span> 推演预测</div>
+            </div>
+        </div>
+        <div class="p-6 h-80 w-full">
+            <canvas id="rtChart"></canvas>
+        </div>
+    </div>
+
+    <!-- 下层布局：Leaflet 地图 (左) 与 微观评估面板 (右) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- 左侧：Leaflet 空间地理地图 + 热门排榜 -->
+        <div class="lg:col-span-5 flex flex-col gap-6">
+            <!-- Leaflet 地图卡片 -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                    <h4 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                        <i data-lucide="map" class="w-4 h-4 text-indigo-500"></i> Leaflet 地理时空交互地图
+                    </h4>
+                    <span class="text-xs bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded font-mono">15x15 Nodes</span>
+                </div>
+
+                <!-- 悬停即时探测器 (Live Inspector) -->
+                <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs mb-3 flex items-center justify-between">
+                    <div>
+                        <span class="text-slate-400 font-semibold uppercase">网格实时探测器 (Hovering)</span>
+                        <div id="hoverGridId" class="text-sm font-bold text-indigo-600 mt-0.5">移动鼠标指向地图网格...</div>
+                    </div>
+                    <div class="text-right flex flex-col items-end">
+                        <div id="hoverGridCoords" class="text-slate-500 font-mono text-[10px]">--</div>
+                        <div id="hoverGridFlow" class="text-slate-700 font-bold mt-0.5">--</div>
+                    </div>
+                </div>
+
+                <!-- 核心：Leaflet 地图容器 -->
+                <div id="leafletMap" class="mb-4">
+                    <!-- Leaflet 地图会动态加载到此 -->
+                </div>
+
+                <!-- 地图图例 -->
+                <div class="flex items-center justify-between text-[11px] text-slate-500 px-1">
+                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-blue-100 border border-slate-200"></span> 低流量</span>
+                    <span class="font-mono">地理对齐: 实体 WGS-84 坐标空间</span>
+                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-blue-600"></span> 高密枢纽</span>
+                </div>
+            </div>
+
+            <!-- 实时热门枢纽 TOP 5 快速定位器 -->
+            <div id="hotspotsContainer" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col transition-all duration-300">
+                <div class="px-5 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                    <h4 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                        <i data-lucide="map-pin" class="w-4 h-4 text-rose-500"></i> 实时高流量枢纽 (Top 5)
+                    </h4>
+                    <span class="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-sm">快速定位</span>
+                </div>
+                <div id="hotspotList" class="p-4 flex flex-col gap-3">
+                    <div class="flex flex-col items-center justify-center py-10 text-slate-400 text-sm gap-2">
+                        <i data-lucide="radio" class="w-6 h-6 animate-pulse"></i>
+                        <span>等待数据流接入...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：选中网格的微观流量与四维科学评估曲线 -->
+        <div class="lg:col-span-7 flex flex-col h-full">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-[600px]">
+
+                <!-- 1. 网格基本信息栏 -->
+                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h4 class="text-base font-bold text-slate-800 flex items-center gap-2 mb-2">
+                            <i data-lucide="crosshair" class="w-4 h-4 text-indigo-500"></i>
+                            <span id="currentRegionName" class="text-indigo-600">Grid --</span>
+                            <span class="text-slate-400 font-normal text-sm ml-1">- 微观路网监测</span>
+                        </h4>
+                        <div class="flex flex-wrap items-center gap-2" id="regionBadges">
+                            <span class="text-slate-400 text-xs">点击左侧地图任意网格可显示微观分析</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-6 flex flex-col flex-grow">
+                    <!-- 2. 微观网格当前核心指标 -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6" id="regionMetrics">
+                        <div class="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <div class="text-[10px] font-bold text-slate-400 uppercase">当前精准度</div>
+                            <div class="text-lg font-black text-slate-800 mt-1" id="valAcc">--%</div>
+                        </div>
+                        <div class="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <div class="text-[10px] font-bold text-slate-400 uppercase">平均 MAE</div>
+                            <div class="text-lg font-black text-slate-800 mt-1" id="valMae">--</div>
+                        </div>
+                        <div class="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <div class="text-[10px] font-bold text-slate-400 uppercase">平均 RMSE</div>
+                            <div class="text-lg font-black text-slate-800 mt-1" id="valRmse">--</div>
+                        </div>
+                        <div class="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <div class="text-[10px] font-bold text-slate-400 uppercase">拟合 R² 决定系数</div>
+                            <div class="text-lg font-black text-slate-800 mt-1" id="valR2">--</div>
+                        </div>
+                    </div>
+
+                    <!-- 3. 微观流量趋势折线图 -->
+                    <div class="flex-1 min-h-[14rem] mb-6 flex flex-col">
+                        <h5 class="text-xs font-bold text-slate-400 mb-3 flex items-center gap-1.5 uppercase tracking-wider">
+                            <i data-lucide="line-chart" class="w-3.5 h-3.5"></i> 区域流量走势对比
+                        </h5>
+                        <div class="relative w-full flex-grow bg-slate-50/50 rounded-xl border border-slate-100 p-3">
+                            <canvas id="regionTrafficChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 4. 学术级核心：四维动态评估指标收敛曲线 -->
+                    <div class="flex-1 min-h-[16rem] flex flex-col">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                            <h5 class="text-xs font-bold text-slate-400 flex items-center gap-1.5 uppercase tracking-wider">
+                                <i data-lucide="analytics" class="w-3.5 h-3.5"></i> 算法推演误差收敛曲线
+                            </h5>
+                            <!-- 四维指标切换按钮群 -->
+                            <div class="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 text-[10px] font-semibold">
+                                <button onclick="switchMetric('mae')" id="tab-mae" class="px-2.5 py-1 rounded bg-white text-indigo-600 shadow-sm transition-all font-sans">MAE</button>
+                                <button onclick="switchMetric('rmse')" id="tab-rmse" class="px-2.5 py-1 rounded text-slate-600 hover:text-slate-800 transition-all font-sans font-medium">RMSE</button>
+                                <button onclick="switchMetric('mse')" id="tab-mse" class="px-2.5 py-1 rounded text-slate-600 hover:text-slate-800 transition-all font-sans font-medium">MSE</button>
+                                <button onclick="switchMetric('r2')" id="tab-r2" class="px-2.5 py-1 rounded text-slate-600 hover:text-slate-800 transition-all font-sans font-medium">R²</button>
+                            </div>
+                        </div>
+
+                        <!-- 多指标重绘图表 -->
+                        <div class="relative w-full flex-grow bg-slate-50/50 rounded-xl border border-slate-100 p-3">
+                            <canvas id="regionMetricChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    lucide.createIcons();
+
+    // ================= 225网格地理图层与 Leaflet 底盘初始化 =================
+    let map = null;           // Leaflet 地图实例
+    let gridCoords = [];      // 从 API 获取的 225 个网格静态数据
+    let gridLayers = [];      // 存储 225 个网格的 L.rectangle 对象以便索引控制
+    let activeGridId = 0;     // 当前选中的网格 ID (默认 0 号网格)
+    let currentStepHistory = []; // 同步回来的推演历史序列
+    let currentSelectedMetric = 'mae'; // 当前选中的研判指标
+    let isGridLocked = false; // 当前网格是否处于锁定研判状态
+
+    // 经纬度控制常数 (须完全对齐 Python 模型配置)
+    const lonMin = 116.0, lonMax = 118.0;
+    const latMin = 36.0, latMax = 37.8;
+    const lonStep = (lonMax - lonMin) / 15;
+    const latStep = (latMax - latMin) / 15;
+
+    // 拉取网格数据并绘制地图
+    function fetchGridsAndBuildMap() {
+        fetch('/api/realtime/grids')
+            .then(res => res.json())
+            .then(data => {
+                gridCoords = data;
+                initLeafletMap();
+            });
+    }
+
+    // 初始化 Leaflet 地图并叠加向量时空网格矩阵
+    function initLeafletMap() {
+        // 1. 初始化地图，定位在预测区域的中心
+        map = L.map('leafletMap', {
+            zoomControl: true,
+            attributionControl: true
+        }).setView([36.9, 117.0], 8.5);
+
+        // 创建自定义图层窗格，用于放置地图文字标签，使其置于半透明网格之上
+        map.createPane('labels');
+        map.getPane('labels').style.zIndex = 650;
+        map.getPane('labels').style.pointerEvents = 'none';
+
+        // 2. 叠加无文字标签的 CartoDB Positron 简约底图 (确保地图上的字最终能够单独叠加在最上层)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        // 3. 绘制一个紫色的虚线框代表我们 225 网格的研究范围
+        L.rectangle([[latMin, lonMin], [latMax, lonMax]], {
+            color: '#6366f1',
+            weight: 2,
+            fill: false,
+            dashArray: '6, 6'
+        }).addTo(map);
+
+        // 4. 动态生成 225 个时空网格（WGS-84 地理投影）
+        gridLayers = [];
+        for (let i = 0; i < 225; i++) {
+            const coord = gridCoords[i];
+            const gridY = Math.floor(i / 15);
+            const gridX = i % 15;
+
+            // 计算出该网格真实地理边界的经纬度范围
+            const cellLatMin = latMin + gridY * latStep;
+            const cellLatMax = cellLatMin + latStep;
+            const cellLonMin = lonMin + gridX * lonStep;
+            const cellLonMax = cellLonMin + lonStep;
+
+            const bounds = [[cellLatMin, cellLonMin], [cellLatMax, cellLonMax]];
+
+            // 实例化 L.rectangle 向量层 (微调初始填充透明度，避免遮挡底图)
+            const rect = L.rectangle(bounds, {
+                color: 'rgba(255, 255, 255, 0.45)', // 白灰色精致边框
+                weight: 1,
+                fillColor: '#3b82f6',
+                fillOpacity: 0.08,
+                className: `grid-layer-node-${i}`
+            }).addTo(map);
+
+            // 绑定地图鼠标互动事件
+            rect.on('mouseover', () => handleGridHover(i, coord));
+            rect.on('mouseout', () => resetGridHover());
+            rect.on('click', () => {
+                if (isGridLocked) {
+                    if (i === activeGridId) {
+                        // 再次点击取消锁定
+                        toggleLockGrid();
+                    }
+                } else {
+                    // 点击时自动全屏聚焦该网格，并开启锁定展示模式
+                    selectGridNode(i);
+                    toggleLockGrid();
+                }
+            });
+
+            gridLayers.push(rect);
+        }
+
+        // 5. 叠加纯文字标签图层至自定义窗格（labelsPane），使其浮在网格上方，清晰可见
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20,
+            pane: 'labels'
+        }).addTo(map);
+
+        // 自动缩放使研究区域窗口充满
+        map.fitBounds([[latMin, lonMin], [latMax, lonMax]]);
+
+        // 默认高亮 0 号网格
+        selectGridNode(0);
+    }
+
+    // 网格悬停事件处理
+    function handleGridHover(gridId, coord) {
+        if (isGridLocked && gridId !== activeGridId) return; // 锁定状态下不触发其他网格的悬浮事件
+
+        document.getElementById('hoverGridId').innerText = `Grid ${gridId}`;
+        document.getElementById('hoverGridCoords').innerText = `经度: ${coord.lon} °E | 纬度: ${coord.lat} °N`;
+
+        if (currentStepHistory.length > 0) {
+            const lastStep = currentStepHistory[currentStepHistory.length - 1];
+            const t_val = lastStep.grid_trues[gridId];
+            const p_val = lastStep.grid_preds[gridId];
+            document.getElementById('hoverGridFlow').innerText = `目前流量: ${t_val} (预测: ${p_val})`;
+        } else {
+            document.getElementById('hoverGridFlow').innerText = `等待推演数据...`;
+        }
+    }
+
+    function resetGridHover() {
+        const activeCoord = gridCoords[activeGridId];
+        if (activeCoord) {
+            document.getElementById('hoverGridId').innerText = `Grid ${activeGridId} (${isGridLocked ? '已锁定研判' : '已锁定'})`;
+            document.getElementById('hoverGridCoords').innerText = `经度: ${activeCoord.lon} °E | 纬度: ${activeCoord.lat} °N`;
+            if (currentStepHistory.length > 0) {
+                const lastStep = currentStepHistory[currentStepHistory.length - 1];
+                const t_val = lastStep.grid_trues[activeGridId];
+                const p_val = lastStep.grid_preds[activeGridId];
+                document.getElementById('hoverGridFlow').innerText = `目前流量: ${t_val} (预测: ${p_val})`;
+            } else {
+                document.getElementById('hoverGridFlow').innerText = `--`;
+            }
+        }
+    }
+
+    // 锁定与解锁当前选中的网格
+    function toggleLockGrid() {
+        isGridLocked = !isGridLocked;
+
+        if (isGridLocked) {
+            // 进入锁定模式：全市大盘与其余全局组件全部不隐藏，仅聚焦缩放地图至当前网格
+            if (gridLayers[activeGridId]) {
+                map.fitBounds(gridLayers[activeGridId].getBounds(), { maxZoom: 13, animate: true });
+            }
+        } else {
+            // 退出锁定模式：视野还原至研究大区域
+            map.fitBounds([[latMin, lonMin], [latMax, lonMax]]);
+        }
+
+        lucide.createIcons();
+
+        // 立即根据最新状态重绘地图
+        if (currentStepHistory.length > 0) {
+            const latestStep = currentStepHistory[currentStepHistory.length - 1];
+            repaintGeographicalHeatmap(latestStep);
+        } else {
+            // 初始无历史数据时的重绘
+            gridLayers.forEach((layer, idx) => {
+                if (isGridLocked) {
+                    if (idx !== activeGridId) {
+                        layer.setStyle({ fillOpacity: 0, opacity: 0, weight: 0 });
+                    } else {
+                        layer.setStyle({ fillOpacity: 0.1, opacity: 1, color: '#f59e0b', weight: 3 });
+                    }
+                } else {
+                    layer.setStyle({
+                        fillOpacity: 0.1,
+                        opacity: 1,
+                        color: idx === activeGridId ? '#f59e0b' : 'rgba(255, 255, 255, 0.45)',
+                        weight: idx === activeGridId ? 3 : 1
+                    });
+                }
+            });
+        }
+        resetGridHover();
+    }
+
+    // 默认选中网格并更新微观面板与高亮样式
+    function selectGridNode(gridId) {
+        if (isGridLocked && gridId !== activeGridId) return; // 锁定状态下，禁用选中其他网格
+
+        activeGridId = gridId;
+
+        // 重绘所有网格样式，对选中的目标网格增加黄色高亮边框
+        gridLayers.forEach((layer, idx) => {
+            if (idx === gridId) {
+                layer.setStyle({
+                    color: '#f59e0b', // 黄色高亮边
+                    weight: 3,
+                    dashArray: ''
+                });
+                layer.bringToFront(); // 确保边框叠在最上层
+            } else {
+                layer.setStyle({
+                    color: isGridLocked ? 'transparent' : 'rgba(255, 255, 255, 0.45)',
+                    weight: isGridLocked ? 0 : 1
+                });
+            }
+        });
+
+        resetGridHover();
+        updateMicroGridPanel();
+    }
+
+
+    // ================= Chart.js 图表初始化 =================
+    Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
+    Chart.defaults.color = '#64748b';
+    Chart.defaults.plugins.tooltip.mode = 'index';
+    Chart.defaults.plugins.tooltip.intersect = false;
+    Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15, 23, 42, 0.9)';
+    Chart.defaults.plugins.tooltip.titleFont = { size: 13 };
+    Chart.defaults.plugins.tooltip.padding = 10;
+    Chart.defaults.plugins.tooltip.cornerRadius = 8;
+
+    const commonGridOptions = { color: '#f1f5f9', drawBorder: false };
+
+    // 全城市级总流量监控 Chart
+    const rtChart = new Chart(document.getElementById('rtChart').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: '真实发生流量', data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.08)', fill: true, tension: 0.35, borderWidth: 2, pointRadius: 0 },
+                { label: '模型预测流量', data: [], borderColor: '#f59e0b', borderDash: [4, 4], tension: 0.35, borderWidth: 2, pointRadius: 0 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 0 },
+            scales: {
+                x: { ticks: { maxTicksLimit: 10, font: { size: 10 } }, grid: { display: false } },
+                y: { beginAtZero: true, grid: commonGridOptions }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+
+    // 顶部全市累计评价 Chart 配置
+    const commonMetricOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 0 },
+        scales: {
+            x: { display: false },
+            y: { ticks: { maxTicksLimit: 3, font: { size: 9 } }, grid: commonGridOptions }
+        },
+        plugins: { legend: { display: false } }
+    };
+
+    const mseChart = new Chart(document.getElementById('mseChart').getContext('2d'), {
+        type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.08)', fill: true, tension: 0.4, borderWidth: 1.5, pointRadius: 0 }] }, options: commonMetricOptions
+    });
+    const maeChart = new Chart(document.getElementById('maeChart').getContext('2d'), {
+        type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.08)', fill: true, tension: 0.4, borderWidth: 1.5, pointRadius: 0 }] }, options: commonMetricOptions
+    });
+    const r2Chart = new Chart(document.getElementById('r2Chart').getContext('2d'), {
+        type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.08)', fill: true, tension: 0.4, borderWidth: 1.5, pointRadius: 0 }] }, options: commonMetricOptions
+    });
+
+    // 选中区域子图表
+    const regionTrafficChart = new Chart(document.getElementById('regionTrafficChart'), {
+        type: 'line',
+        data: { labels: [], datasets: [
+            { label: '真实', data: [], borderColor: '#3b82f6', tension: 0.4, borderWidth: 2, pointRadius: 1, backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true },
+            { label: '预测', data: [], borderColor: '#f59e0b', borderDash: [4, 4], tension: 0.4, borderWidth: 2, pointRadius: 1 }
+        ]},
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 0 },
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { display: true, ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
+                y: { beginAtZero: true, grid: commonGridOptions }
+            }
+        }
+    });
+
+    // 选中网格四维评估指标趋势 Chart (高度集成，根据 Tab 动态切换数据集)
+    const regionMetricChart = new Chart(document.getElementById('regionMetricChart'), {
+        type: 'line',
+        data: { labels: [], datasets: [{ label: '指标数值', data: [], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.08)', fill: true, tension: 0.35, borderWidth: 2, pointRadius: 1 }]},
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 0 },
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
+                y: { grid: commonGridOptions }
+            }
+        }
+    });
+
+
+    // ================= 核心计算与同步逻辑 =================
+
+    // 在浏览器端利用滑窗历史，为特定网格实时计算四维学术指标 (MAE, MSE, RMSE, R2)
+    function calculateSpatiotemporalMetrics(trues, preds) {
+        if (trues.length === 0) return { mae: 0, mse: 0, rmse: 0, r2: 0, acc: 0 };
+
+        let sumAbsErr = 0;
+        let sumSqErr = 0;
+        let sumTrue = 0;
+
+        for (let i = 0; i < trues.length; i++) {
+            const diff = trues[i] - preds[i];
+            sumAbsErr += Math.abs(diff);
+            sumSqErr += diff * diff;
+            sumTrue += trues[i];
+        }
+
+        const meanTrue = sumTrue / trues.length;
+        let sumTotalVar = 0;
+        for (let i = 0; i < trues.length; i++) {
+            const diffTrue = trues[i] - meanTrue;
+            sumTotalVar += diffTrue * diffTrue;
+        }
+
+        const mae = sumAbsErr / trues.length;
+        const mse = sumSqErr / trues.length;
+        const rmse = Math.sqrt(mse);
+
+        // 当方差为0时置 r2 为 1
+        let r2 = sumTotalVar > 0 ? (1 - (sumSqErr / sumTotalVar)) : 1.0;
+        if (r2 < -1.0) r2 = -1.0; // 稳定界限
+
+        const acc = sumTrue > 0 ? Math.max(0, 100 - (sumAbsErr / sumTrue) * 100) : 100.0;
+
+        return {
+            mae: mae.toFixed(2),
+            mse: mse.toFixed(2),
+            rmse: rmse.toFixed(2),
+            r2: r2.toFixed(3),
+            acc: acc.toFixed(1)
+        };
+    }
+
+    // 产生截至当前每一个时间点，特定网格的四指标演变序列 (以便绘制动态评估曲线)
+    function generateMetricConvergenceHistory(trues, preds) {
+        let maeHistory = [];
+        let mseHistory = [];
+        let rmseHistory = [];
+        let r2History = [];
+
+        for (let j = 0; j < trues.length; j++) {
+            const sliceTrue = trues.slice(0, j + 1);
+            const slicePred = preds.slice(0, j + 1);
+            const metrics = calculateSpatiotemporalMetrics(sliceTrue, slicePred);
+
+            maeHistory.push(parseFloat(metrics.mae));
+            mseHistory.push(parseFloat(metrics.mse));
+            rmseHistory.push(parseFloat(metrics.rmse));
+            r2History.push(parseFloat(metrics.r2));
+        }
+
+        return { maeHistory, mseHistory, rmseHistory, r2History };
+    }
+
+    function updateMicroGridPanel() {
+        if (currentStepHistory.length === 0 || !gridCoords[activeGridId]) return;
+
+        const coord = gridCoords[activeGridId];
+        document.getElementById('currentRegionName').innerText = `Grid ${activeGridId}`;
+
+        // 提取该网格的时间序列
+        const times = currentStepHistory.map(d => d.timestamp);
+        const gridTrues = currentStepHistory.map(d => d.grid_trues[activeGridId]);
+        const gridPreds = currentStepHistory.map(d => d.grid_preds[activeGridId]);
+
+        // 渲染单网格走势
+        regionTrafficChart.data.labels = times;
+        regionTrafficChart.data.datasets[0].data = gridTrues;
+        regionTrafficChart.data.datasets[1].data = gridPreds;
+        regionTrafficChart.update();
+
+        // 算当前累计指标
+        const currentMetrics = calculateSpatiotemporalMetrics(gridTrues, gridPreds);
+        document.getElementById('valAcc').innerText = `${currentMetrics.acc}%`;
+        document.getElementById('valMae').innerText = currentMetrics.mae;
+        document.getElementById('valRmse').innerText = currentMetrics.rmse;
+        document.getElementById('valR2').innerText = currentMetrics.r2;
+
+        // 生成收敛历史，用于动态重画评价指标曲线
+        const convergence = generateMetricConvergenceHistory(gridTrues, gridPreds);
+        regionMetricChart.data.labels = times;
+
+        // 根据前端 Tab 的状态选择对应的数据
+        let datasetColor = '#10b981'; // 默认 MAE 绿
+        let plotData = [];
+
+        if (currentSelectedMetric === 'mae') {
+            plotData = convergence.maeHistory;
+            datasetColor = '#10b981';
+        } else if (currentSelectedMetric === 'rmse') {
+            plotData = convergence.rmseHistory;
+            datasetColor = '#8b5cf6'; // RMSE 紫色
+        } else if (currentSelectedMetric === 'mse') {
+            plotData = convergence.mseHistory;
+            datasetColor = '#f97316'; // MSE 橙色
+        } else if (currentSelectedMetric === 'r2') {
+            plotData = convergence.r2History;
+            datasetColor = '#3b82f6'; // R² 蓝色
+        }
+
+        regionMetricChart.data.datasets[0].data = plotData;
+        regionMetricChart.data.datasets[0].borderColor = datasetColor;
+        regionMetricChart.data.datasets[0].backgroundColor = datasetColor + '0d';
+        regionMetricChart.update();
+
+        // 动态徽章展示
+        const lastTrue = gridTrues[gridTrues.length - 1];
+        const lastPred = gridPreds[gridPreds.length - 1];
+        document.getElementById('regionBadges').innerHTML = `
+            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                中心经纬: [${coord.lon}, ${coord.lat}]
+            </span>
+            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-200">
+                当前流量: ${lastTrue}
+            </span>
+            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200">
+                预测流量: ${lastPred}
+            </span>
+        `;
+    }
+
+    // 指标标签页切换
+    function switchMetric(metric) {
+        currentSelectedMetric = metric;
+
+        // 样式重置
+        const tabs = ['mae', 'rmse', 'mse', 'r2'];
+        tabs.forEach(t => {
+            const el = document.getElementById(`tab-${t}`);
+            if (t === metric) {
+                el.className = "px-2.5 py-1 rounded bg-white text-indigo-600 shadow-sm transition-all";
+            } else {
+                el.className = "px-2.5 py-1 rounded text-slate-600 hover:text-slate-800 transition-all";
+            }
+        });
+
+        updateMicroGridPanel();
+    }
+
+
+    // ================= 模拟引擎启停同步控制 =================
+
+    // 开始全新的预测（清除历史记录）
+    function startPrediction() {
+        const steps = document.getElementById('stepsInput').value;
+        fetch('/api/realtime/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ steps: parseInt(steps), resume: false }) // 采用 JavaScript 原生小写布尔值
+        })
+        .then(res => res.json())
+        .then(() => pollSync())
+        .catch(err => console.error("启动失败:", err));
+    }
+
+    // 继续此前的预测（追加步数，保留历史）
+    function continuePrediction() {
+        const steps = document.getElementById('stepsInput').value;
+        fetch('/api/realtime/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ steps: parseInt(steps), resume: true }) // 采用 JavaScript 原生小写布尔值
+        })
+        .then(res => res.json())
+        .then(() => pollSync())
+        .catch(err => console.error("追加失败:", err));
+    }
+
+    function stopPrediction() {
+        fetch('/api/realtime/stop', { method: 'POST' })
+        .then(res => res.json())
+        .then(() => pollSync());
+    }
+
+    // 递归调整操作面板中按钮的启用状态与文本
+    function updateUIControls(status) {
+        const btnStart = document.getElementById('btnStart');
+        const btnStop = document.getElementById('btnStop');
+        const btnContinue = document.getElementById('btnContinue');
+        const inputSteps = document.getElementById('stepsInput');
+
+        inputSteps.disabled = status.is_running;
+        btnStop.disabled = !status.is_running;
+
+        if (status.is_running) {
+            btnStart.disabled = true;
+            btnContinue.disabled = true;
+        } else {
+            btnStart.disabled = false;
+            // 只要已经推演过至少 1 步，左侧按钮变更为“重新预测”
+            if (status.current_step > 0) {
+                btnStart.innerText = "重新预测";
+                btnStart.className = "px-4 py-1.5 bg-amber-600 text-white text-sm font-medium rounded shadow-sm hover:bg-amber-700 transition-colors";
+                btnContinue.disabled = false; // 终止或完毕后，允许继续预测
+            } else {
+                btnStart.innerText = "开始预测";
+                btnStart.className = "px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded shadow-sm hover:bg-blue-700 transition-colors";
+                btnContinue.disabled = true;
+            }
+        }
+
+        const statusInd = document.getElementById('statusIndicator');
+        const statusTxt = document.getElementById('statusText');
+
+        if (status.is_running) {
+            statusInd.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse";
+            statusTxt.innerText = "时空图推演中...";
+            statusTxt.className = "text-blue-600 font-medium text-sm";
+        } else if (status.is_finished) {
+            statusInd.className = "w-2 h-2 rounded-full bg-emerald-500";
+            statusTxt.innerText = "推演完毕";
+            statusTxt.className = "text-emerald-600 font-medium text-sm";
+        } else if (status.current_step > 0) {
+            statusInd.className = "w-2 h-2 rounded-full bg-amber-500";
+            statusTxt.innerText = "推演暂停";
+            statusTxt.className = "text-amber-600 font-medium text-sm";
+        } else {
+            statusInd.className = "w-2 h-2 rounded-full bg-slate-400";
+            statusTxt.innerText = "网络就绪，等待推演...";
+            statusTxt.className = "text-slate-600 font-medium text-sm";
+        }
+
+        const percent = status.target_steps > 0 ? Math.min(100, (status.current_step / status.target_steps) * 100) : 0;
+        document.getElementById('progressBar').style.width = `${percent}%`;
+        document.getElementById('progressText').innerText = `${status.current_step} / ${status.target_steps} 步`;
+    }
+
+    // 动态绘制 Leaflet 网格地图的热力饱和度 (支持锁定模式过滤)
+    function repaintGeographicalHeatmap(latestStep) {
+        if (!latestStep || gridLayers.length === 0) return;
+        const maxFlow = Math.max(...latestStep.grid_trues, 1);
+
+        for (let i = 0; i < 225; i++) {
+            const flow = latestStep.grid_trues[i];
+            const layer = gridLayers[i];
+            if (layer) {
+                if (isGridLocked) {
+                    // 锁定状态下，隐藏所有非激活的网格层
+                    if (i !== activeGridId) {
+                        layer.setStyle({
+                            fillOpacity: 0,
+                            opacity: 0,
+                            weight: 0
+                        });
+                    } else {
+                        // 仅渲染并突出显示当前激活/锁定网格的热力 (微调最大透明度，避免遮挡文字标签)
+                        const saturation = flow / maxFlow;
+                        layer.setStyle({
+                            color: '#f59e0b', // 锁定专属金色高亮框
+                            weight: 3,
+                            opacity: 1,
+                            fillColor: '#3b82f6',
+                            fillOpacity: flow > 0 ? (0.05 + saturation * 0.45) : 0.02
+                        });
+                    }
+                } else {
+                    // 解锁状态，正常渲染全市 225 个网格热力
+                    const saturation = flow / maxFlow;
+                    layer.setStyle({
+                        color: i === activeGridId ? '#f59e0b' : 'rgba(255, 255, 255, 0.45)',
+                        weight: i === activeGridId ? 3 : 1,
+                        opacity: 1,
+                        fillColor: '#3b82f6',
+                        fillOpacity: flow > 0 ? (0.05 + saturation * 0.45) : 0.02
+                    });
+                }
+            }
+        }
+    }
+
+    // 同步渲染 Top 5 枢纽卡片，点击任意卡片即可定位并高亮地图
+    function renderHotspotsUI(latestHotspots) {
+        const container = document.getElementById('hotspotList');
+        if (!latestHotspots || latestHotspots.length === 0) return;
+
+        container.innerHTML = '';
+        latestHotspots.forEach((spot, index) => {
+            const isSelected = activeGridId === spot.grid_id;
+
+            const item = document.createElement('div');
+            item.className = `region-item cursor-pointer px-4 py-2.5 rounded-lg border flex items-center justify-between shadow-sm ${
+                isSelected ? 'active border-blue-400' : 'border-slate-100 bg-white hover:border-blue-300'
+            }`;
+
+            item.onclick = () => {
+                selectGridNode(spot.grid_id);
+
+                // 定位地图视野至该网格
+                if (gridCoords[spot.grid_id]) {
+                    const coord = gridCoords[spot.grid_id];
+                    map.panTo([coord.lat, coord.lon]);
+                }
+            };
+
+            const rankColors = ['bg-rose-500', 'bg-orange-500', 'bg-amber-500', 'bg-slate-400', 'bg-slate-300'];
+            const rankColor = rankColors[index] || 'bg-slate-300';
+
+            item.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <div class="w-6 h-6 rounded-full ${rankColor} text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                        ${index + 1}
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="font-bold text-slate-700 text-xs">网格 ${spot.grid_id}</span>
+                        <span class="text-[10px] text-slate-400 font-mono">${spot.lon}, ${spot.lat}</span>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="text-xs font-bold text-slate-700">${spot.true} 订单</div>
+                    <div class="text-[9px] text-emerald-500 font-bold">精: ${spot.accuracy}%</div>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    function pollSync() {
+        fetch('/api/realtime/sync')
+            .then(res => res.json())
+            .then(data => {
+                updateUIControls(data);
+
+                if (data.history && data.history.length > 0) {
+                    currentStepHistory = data.history;
+
+                    const times = data.history.map(d => d.timestamp);
+                    const trueVals = data.history.map(d => d.true_val);
+                    const predVals = data.history.map(d => d.pred_val);
+
+                    // 真实渲染大盘流量折线图
+                    rtChart.data.labels = times;
+                    rtChart.data.datasets[0].data = trueVals;
+                    rtChart.data.datasets[1].data = predVals;
+                    rtChart.update();
+
+                    // 真实渲染全市评估指标折线图
+                    mseChart.data.labels = times; mseChart.data.datasets[0].data = data.metrics_history.mse; mseChart.update();
+                    maeChart.data.labels = times; maeChart.data.datasets[0].data = data.metrics_history.mae; maeChart.update();
+                    r2Chart.data.labels = times; r2Chart.data.datasets[0].data = data.metrics_history.r2; r2Chart.update();
+
+                    const latestStep = data.history[data.history.length - 1];
+
+                    // 重绘空间地图背景热力色
+                    repaintGeographicalHeatmap(latestStep);
+
+                    // 重绘 Top 5
+                    renderHotspotsUI(latestStep.hotspots);
+
+                    // 重建单网格细部面板
+                    updateMicroGridPanel();
+                }
+            })
+            .catch(e => console.error("同步失败", e));
+    }
+
+    // 页面初始化
+    window.onload = function() {
+        fetchGridsAndBuildMap();
+        pollSync();
+        setInterval(pollSync, 1000); // 1秒同步一次
+    };
+
+</script>
+{% endblock %}
