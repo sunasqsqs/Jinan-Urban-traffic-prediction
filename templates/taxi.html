@@ -1,0 +1,2016 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<style>
+    /* 优雅自定义滚动条 */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* Leaflet 地图容器及优雅微光边框 */
+    #leafletMap {
+        height: 520px;
+        width: 100%;
+        border-radius: 16px;
+        border: 1px solid #e2e8f0;
+        box-shadow: inset 0 2px 4px 0 rgba(148, 163, 184, 0.05);
+        z-index: 10;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* 瓦片底图微调：亮色质感高德地图，保持柔和对比 */
+    .leaflet-tile-pane {
+        filter: grayscale(10%) contrast(100%) brightness(100%);
+    }
+
+    /* 模拟终端字格 */
+    .terminal-font {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    /* 呼吸灯特效 */
+    .gps-pulse {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+        animation: pulse-gps 1.8s infinite cubic-bezier(0.66, 0, 0, 1);
+    }
+    @keyframes pulse-gps {
+        to { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
+    }
+
+    /* 弹窗轻微弹跳抖动动画 */
+    @keyframes bounce-short {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-6px); }
+    }
+    .animate-bounce-short {
+        animation: bounce-short 3s infinite ease-in-out;
+    }
+</style>
+
+<div class="space-y-6 pb-12 relative animate-fadeIn">
+
+    <div id="dispatch-alert-modal" class="hidden fixed bottom-6 right-6 z-[1000] w-96 bg-white/95 backdrop-blur-md border-2 border-amber-400 rounded-2xl shadow-[0_15px_50px_rgba(245,158,11,0.15)] p-5 text-slate-800 animate-bounce-short">
+        <div class="flex justify-between items-start">
+            <div class="flex items-center gap-2 text-amber-600 font-bold text-sm">
+                <span class="relative flex h-3.5 w-3.5">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500"></span>
+                </span>
+                <i data-lucide="shield-alert" class="w-4 h-4 text-amber-500"></i>
+                <span>交通大脑 · 紧急补仓调度令</span>
+            </div>
+            <button onclick="dismissDispatchAlert()" class="text-slate-400 hover:text-slate-600 transition">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+        </div>
+        <div class="mt-3.5 space-y-3 text-xs leading-relaxed">
+            <p class="text-slate-600">
+                济南市交通大脑研判：预测到 <strong class="text-amber-600 font-extrabold" id="alert-grid-name">--</strong> 在未来存在严重的客流潮汐缺口，目前溢出需求急需空载运力补齐。
+            </p>
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 font-mono space-y-1.5 text-[11px]">
+                <div class="flex justify-between">
+                    <span class="text-slate-500">🚨 缺口风险网格:</span>
+                    <span class="text-indigo-600 font-bold" id="alert-grid-id">Grid --</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-500">🚚 建议调配空车:</span>
+                    <span class="text-emerald-600 font-bold" id="alert-vehicle-count">+-- 辆</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-500">⏰ 目标履约时间:</span>
+                    <span class="text-amber-600 font-bold" id="alert-target-time">--</span>
+                </div>
+            </div>
+            <p class="text-slate-500 text-[10px]">
+                💡 <b>调度特别补贴：</b>现在前往该热区支援，补仓抵达后将额外发放网格补贴金 <span class="text-emerald-600 font-bold">¥20.0</span>。
+            </p>
+        </div>
+        <div class="mt-4 flex gap-2.5">
+            <button onclick="dismissDispatchAlert()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2 rounded-lg font-bold transition text-xs border border-slate-200">
+                拒绝/忽略
+            </button>
+            <button onclick="acceptDispatchAlert()" class="flex-1 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 py-2 rounded-lg font-extrabold transition text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20">
+                <i data-lucide="navigation-2" class="w-3.5 h-3.5 text-slate-950 animate-pulse"></i>
+                接单并一键导航
+            </button>
+        </div>
+    </div>
+    <div class="border-b border-slate-200 pb-4 flex flex-col xl:flex-row justify-between items-start xl:items-end gap-4">
+        <div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-mono mb-3 shadow-sm">
+                <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                </span>
+                MAMBA-GNN RECURSIVE DISPATCH TERMINAL v3.6
+            </div>
+            <h3 class="text-3xl font-bold text-slate-800 tech-font mb-1.5">模拟接单</h3>
+            <p class="text-slate-500 text-sm max-w-4xl">
+                系统根据Mamba和GNN联合模型的历史预测数据进行实时模拟，可以接收来自决策大厅的实时派车令与调优广播。
+            </p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">系统本地实时时间</div>
+                <div class="text-xl font-black text-amber-600 font-mono mt-1" id="hudOnlineTime">00:00:00</div>
+            </div>
+            <div class="p-2 bg-amber-50 text-amber-500 rounded-lg"><i data-lucide="clock" class="w-5 h-5"></i></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">已到账调度补贴</div>
+                <div class="text-xl font-black text-emerald-600 font-mono mt-1" id="hudDriverEarnings">¥ 0.00</div>
+            </div>
+            <div class="p-2 bg-emerald-50 text-emerald-500 rounded-lg"><i data-lucide="banknote" class="w-5 h-5"></i></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">已响应调度指令</div>
+                <div class="text-xl font-black text-indigo-600 font-mono mt-1" id="hudDriverTrips">0 <span class="text-xs text-slate-400 font-normal">次</span></div>
+            </div>
+            <div class="p-2 bg-indigo-50 text-indigo-500 rounded-lg"><i data-lucide="navigation-2" class="w-5 h-5"></i></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">实现跨页面联动</div>
+                <div class="text-xl font-black text-emerald-500 font-mono mt-1" id="hudGpsStatus">极速联通，接受广播</div>
+            </div>
+            <div class="p-2 bg-emerald-50 text-emerald-500 rounded-lg"><i data-lucide="radio" class="w-5 h-5 animate-pulse"></i></div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full">
+
+        <div class="lg:col-span-8 flex flex-col gap-6">
+            <section class="flex flex-col gap-4 bg-white rounded-2xl border border-slate-200 p-5 shadow-sm min-h-[580px]">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="map" class="w-5 h-5 text-amber-500"></i>
+                        <span class="text-sm font-bold text-slate-800">高德路网 Leaflet 车主态智能导航地图</span>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-3 text-xs font-semibold">
+                        <label class="flex items-center gap-1.5 cursor-pointer bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg select-none">
+                            <input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmapOverlay()" class="rounded text-amber-500 focus:ring-amber-400 border-slate-300" checked>
+                            <span class="text-slate-700">💡 叠加时空预测热力网格</span>
+                        </label>
+                        <label class="flex items-center gap-1.5 cursor-pointer bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg select-none">
+                            <input type="checkbox" id="charging-toggle" onchange="toggleChargingStations()" class="rounded text-emerald-500 focus:ring-emerald-400 border-slate-300">
+                            <span class="text-slate-700">⚡ 查找周边充电站雷达</span>
+                        </label>
+                        <div id="traffic-broadcast" class="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-2 max-w-[240px] truncate">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0"></span>
+                            <span id="broadcast-text" class="text-emerald-600 text-[11px] truncate">正在监听济南时长周期路网走势...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative flex-grow bg-slate-50 rounded-xl overflow-hidden border border-slate-200 min-h-[460px]">
+                    <div id="leafletMap" class="absolute inset-0 w-full h-full"></div>
+
+                    <div class="absolute top-4 left-4 bg-white/95 backdrop-blur-md border border-slate-200 p-4 rounded-xl shadow-lg z-10 max-w-[240px] text-xs space-y-2.5">
+                        <div class="font-bold text-slate-800 border-b border-slate-100 pb-1.5 flex items-center gap-1.5">
+                            <i data-lucide="compass" class="w-4 h-4 text-amber-500 animate-spin-slow"></i>
+                            车载大屏图例助手
+                        </div>
+                        <p class="text-[10px] text-slate-500 leading-relaxed">
+                            您可以在地图上任意点击来**快速修正您的当前位置**。地图网格采用红系供需配色，深度支持实秒悬浮监控刷新。
+                        </p>
+                        <div class="flex flex-col gap-1.5 text-[10px] text-slate-600">
+                            <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> 🚕 您的鲁A车辆当前实时GPS点</span>
+                            <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> 🟢 绿标：当前订单上车点 (A)</span>
+                            <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> 🔴 红标：出行目的地 (B)</span>
+                            <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-teal-500"></span> ⚡ 电源：充电补能站位置</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 移除 Jinja 引擎渲染，改由前端 JS 直接动态生成 -->
+                <div class="flex flex-wrap gap-2 justify-center items-center py-1.5 border-t border-slate-100" id="landmark-buttons-container">
+                    <span class="text-xs text-slate-400 flex items-center gap-1"><i data-lucide="navigation" class="w-3.5 h-3.5"></i> 一键空驶巡游至：</span>
+                </div>
+            </section>
+
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-inner flex flex-col h-[180px]">
+                <h4 class="text-xs text-slate-500 font-bold border-b border-slate-200 pb-2 mb-2 uppercase flex items-center gap-1.5">
+                    <i data-lucide="terminal" class="w-4 h-4 text-indigo-500 animate-pulse"></i>
+                    长周期时空调度仿真系统日志
+                </h4>
+                <div id="system-logs" class="flex-1 overflow-y-auto space-y-1 terminal-font text-[10px] text-slate-600 pr-1">
+                    <div class="text-slate-400 italic">初始化调度监控单元...</div>
+                </div>
+            </div>
+        </div>
+
+        <section class="lg:col-span-4 flex flex-col gap-6">
+
+            <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+                        <i data-lucide="radio" class="w-4 h-4 text-indigo-500"></i>
+                        调度通道控制台
+                    </h3>
+                    <div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-mono font-bold border border-emerald-200 shadow-sm animate-pulse">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        已连接 Brain 通道
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 text-slate-700 p-3.5 rounded-xl border border-slate-200 text-xs space-y-2 font-mono shadow-inner">
+                    <div class="flex justify-between border-b border-slate-150 pb-1">
+                        <span class="text-slate-400 font-semibold">【在途车辆定位】</span>
+                        <span id="gps-coords-display" class="text-emerald-600 font-bold">117.024967, 36.661156</span>
+                    </div>
+                    <div class="flex justify-between border-b border-slate-150 pb-1">
+                        <span class="text-slate-400 font-semibold">【当前定位网格】</span>
+                        <span id="gps-grid-display" class="text-indigo-600 font-bold">Grid 112 (中心商圈)</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400 font-semibold">【时空响应延迟】</span>
+                        <span id="gps-speed-display" class="text-slate-600">0.0 ms | 误差: ±12m</span>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-2">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="font-bold text-slate-700 flex items-center gap-1">
+                            <i data-lucide="battery-charging" class="w-3.5 h-3.5 text-emerald-500"></i>
+                            EV 新新能源电量 (SOC)
+                        </span>
+                        <span id="battery-percentage" class="font-bold text-emerald-600 font-mono">92%</span>
+                    </div>
+                    <div class="w-full bg-slate-200 rounded-full h-2">
+                        <div id="battery-bar" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 92%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
+
+                <div id="d-order-pool" class="flex flex-col gap-3">
+                    <h4 class="text-xs text-slate-400 font-bold flex items-center justify-between border-b border-slate-100 pb-2">
+                        <span>当前决策大厅可达任务 (时空对齐解算)</span>
+                        <span class="text-[10px] text-indigo-500 animate-pulse font-mono" id="d-pool-count">正在解算调度网格...</span>
+                    </h4>
+
+                    <div id="active-dispatch-dashboard-card" class="bg-indigo-50/50 border border-indigo-150 rounded-xl p-3.5 text-xs text-slate-700 flex flex-col gap-2">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-slate-800 flex items-center gap-1 text-[11px]"><span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span> 决策中心派发监控</span>
+                            <span id="dispatch-monitor-status" class="text-[9px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-mono">WAITING_COMMAND</span>
+                        </div>
+                        <p id="dispatch-monitor-desc" class="text-[10px] text-slate-500">
+                            正在守候调度决策大厅（<code>dispatch.html</code>）手动触发的微调派车令或全局调优指令。
+                        </p>
+                    </div>
+
+                    <div id="d-available-list" class="flex flex-col gap-2.5 max-h-[380px] overflow-y-auto pr-1">
+                    </div>
+                </div>
+
+                <div id="d-active-task" class="hidden">
+                </div>
+            </div>
+
+        </section>
+    </div>
+</div>
+
+<script>
+    // --- 核心业务属性 ---
+    let driverId = 'driver_' + Math.floor(Math.random() * 100000);
+    let driverName = '鲁A·师' + Math.floor(Math.random() * 1000);
+    let driverVehicle = '鲁A·D' + Math.floor(10000 + Math.random() * 90000) + ' (新能源比亚迪)';
+    let isDriverOnline = true;
+
+    // 初始位置，以济南泉城广场为中心
+    let driverPosition = { lng: 117.024967, lat: 36.661156 };
+    let gpsWatchId = null;
+    let gpsAccuracy = 15;
+    let currentSpeed = 0;
+
+    let activeTrip = null;
+    let activeTripId = null;
+
+    let onlineTimerInterval = null;
+    let onlineStartTime = parseInt(localStorage.getItem('mamba_online_start_time'), 10);
+    if (!onlineStartTime || isNaN(onlineStartTime)) {
+        let oldSeconds = parseInt(localStorage.getItem('mamba_online_seconds') || '0', 10);
+        onlineStartTime = Math.floor(Date.now() / 1000) - oldSeconds;
+        localStorage.setItem('mamba_online_start_time', onlineStartTime);
+    }
+
+    let onlineSeconds = 0;
+    let todayEarnings = 0.00;
+    let completedTripsCount = 0;
+    let batteryLevel = 92;
+    let chargingTimerId = null;
+
+    let driverOnlineIntervalId = null;
+    let activeAlertData = null;
+    let lastAlertTimestamp = 0;
+
+    // --- Leaflet 与高德瓦片底图标记 ---
+    let map = null;
+    let driverMarker = null;
+    let pickupMarker = null;
+    let dropoffMarker = null;
+    let currentRoutePolyline = null;
+    let chargingMarkersGroup = null;
+    let hotspotMarkersGroup = null;
+
+    let amapGridPolygons = [];
+    let showHeatmapToggle = true;
+    let showChargingToggle = false;
+    let hoverGridId = null;
+    let activeGridId = null;
+    let experimentData = null;
+
+    // 取消本地獨立變量，將使用絕對時間的 Date.now() 進行鎖定計算
+    let tickIndex = 0;
+
+    // 💡 修复：让车主端直接写入全局调度日志库，解决同标签页切换时日志丢失的问题
+    function pushToDispatchLog(msg, type) {
+        let logs = [];
+        try {
+            logs = JSON.parse(localStorage.getItem('mamba_dispatch_logs')) || [];
+        } catch (e) {}
+        const timeStr = new Date().toLocaleTimeString([], { hour12: false });
+        logs.push({ msg, type, time: timeStr });
+        if (logs.length > 50) logs.shift();
+        localStorage.setItem('mamba_dispatch_logs', JSON.stringify(logs));
+
+        // 触发跨标签页增量渲染（保障双屏双开用户体验）
+        localStorage.setItem('mamba_dispatch_logs_new', JSON.stringify({msg, type, time: timeStr, _t: Date.now()}));
+    }
+
+    const JINAN_LANDMARKS = [
+        {"id": "quancheng_sq", "name": "泉城广场 (市中心)", "lng": 117.024967, "lat": 36.661156, "icon": "🏙️"},
+        {"id": "baotu_spring", "name": "趵突泉景区", "lng": 117.015577, "lat": 36.660634, "icon": "⛲"},
+        {"id": "daming_lake", "name": "大明湖风景区", "lng": 117.025354, "lat": 36.672957, "icon": "⛵"},
+        {"id": "jinan_west", "name": "济南西站 (高铁站)", "lng": 116.886368, "lat": 36.668102, "icon": "🚄"},
+        {"id": "yaoqiang_airport", "name": "遥墙国际机场", "lng": 117.265531, "lat": 36.850785, "icon": "✈️"},
+        {"id": "qianfoshan", "name": "千佛山公园", "lng": 117.032649, "lat": 36.638531, "icon": "⛰️"},
+        {"id": "gaoxin_wanda", "name": "高新区万达广场", "lng": 117.135235, "lat": 36.673891, "icon": "🛍️"}
+    ];
+
+    const CHARGING_STATIONS = [
+        { name: "泉城广场地下快速充电中心", lng: 117.0260, lat: 36.6620, power: "120kW 直流快充" },
+        { name: "济南西站北广场特来电补能站", lng: 116.8850, lat: 36.6700, power: "180kW 超级闪充" },
+        { name: "经十路万象城特来电超充站", lng: 117.0990, lat: 36.6530, power: "240kW 液冷超充" },
+        { name: "高新区汉峪金谷智能充电站", lng: 117.1420, lat: 36.6510, power: "150kW 智能快充" },
+        { name: "大明湖西南门国网充电桩枢纽", lng: 117.0210, lat: 36.6710, power: "120kW 直流快充" },
+        { name: "奥体中心东荷西柳特来电充电站", lng: 117.1120, lat: 36.6540, power: "360kW 液冷闪充" },
+        { name: "趵突泉北门国网超充服务站", lng: 117.0140, lat: 36.6620, power: "180kW 高压快充" },
+        { name: "遥墙国际机场停车场补能中心", lng: 117.2640, lat: 36.8480, power: "240kW 机场超充" },
+        { name: "千佛山公园南门充电站", lng: 117.0340, lat: 36.6350, power: "120kW 直流快充" },
+        { name: "二环东路百花公园快充站", lng: 117.0650, lat: 36.6720, power: "150kW 极速充电" },
+        { name: "融创文旅城特来电超级充电港", lng: 117.1950, lat: 36.6430, power: "360kW 液冷超充" },
+        { name: "无影山中路智能补能服务港", lng: 116.9850, lat: 36.6890, power: "180kW 综合充能" }
+    ];
+
+    // 💡 完整硬编码数据源
+    const EMBEDDED_EXPERIMENT_DATA = {
+        "evaluation_groups": {
+            "Mamba_GNN_Single": {
+                "Mamba-GNN": {
+                    "mse": "188.83",
+                    "rmse": "13.74",
+                    "mae": "1.84",
+                    "mape": "24.47",
+                    "wmape": "10.97",
+                    "r2": "0.9906",
+                    "parameters": 140623,
+                    "avg_epoch_time_s": "0.38"
+                }
+            }
+        },
+        "loss_history": {
+            "Mamba-GNN": {
+                "train": [0.17612798511981964,0.10733400844037533,0.06654740869998932,0.04675118997693062,0.03899796772748232,0.035880716517567635,0.03419280704110861,0.03209732240065932,0.030184162314981222,0.028082060627639294,0.026267989072948694,0.025549751706421375,0.024427799973636866,0.02325592190027237,0.022237009834498167,0.021220904774963856,0.020529526751488447,0.01978867733851075,0.019363378640264273,0.01918459264561534,0.018783841747790575,0.018597304355353117,0.01838342985138297,0.01758950762450695,0.017574994824826717,0.01742385094985366,0.017239580396562815,0.017077963333576918,0.0168223031796515,0.016766173299402,0.016533570364117622,0.016532379435375333,0.016433969838544726,0.016203685896471143,0.01621457515284419,0.015859915874898434,0.01586364977993071,0.01579729327932,0.01568094198592007,0.015541990054771304,0.015512714395299554,0.015576524194329977,0.015326811699196696,0.015308997360989451,0.015295491553843021,0.015402823453769088,0.015093455789610744,0.01541089965030551],
+                "val": [0.12639304995536804,0.08220994472503662,0.05512778460979462,0.043999992311000824,0.039645370095968246,0.037232011556625366,0.035385578870773315,0.03363664075732231,0.031000662595033646,0.030208222568035126,0.028809113427996635,0.027052009478211403,0.02594492956995964,0.02540311962366104,0.02488032914698124,0.02362021431326866,0.02237284928560257,0.02175026200711727,0.021309811621904373,0.020941684022545815,0.02071230113506317,0.020456356927752495,0.020131073892116547,0.01997823640704155,0.02014535292983055,0.020354771986603737,0.019874779507517815,0.019745446741580963,0.019556857645511627,0.01944621652364731,0.019296474754810333,0.019301997497677803,0.01931900903582573,0.019240176305174828,0.019270287826657295,0.019188083708286285,0.019076183438301086,0.019235190004110336,0.01905873604118824,0.01902022585272789,0.019097309559583664,0.019052250310778618,0.01896045356988907,0.019067170098423958,0.019077979028224945,0.019022034481167793,0.019009603187441826,0.019218826666474342]
+            }
+        },
+        "predictions_time_series": {
+            "ground_truth": [3172.999755859375,2495.999755859375,1821.0,1313.0003662109375,1016.0,778.9999389648438,668.0,538.0,435.0000305175781,378.9999694824219,357.0000305175781,483.00006103515625,683.9999389648438,981.0001220703125,1448.0,2024.99951171875,3089.0009765625,4111.0,4606.99951171875,4750.0,5184.9990234375,5814.0,6103.001953125,5761.0009765625,6055.0009765625,6243.9990234375,6194.9990234375,6148.0,6049.9990234375,6010.99853515625,6060.9990234375,5749.00048828125,5770.0009765625,5973.99951171875,5535.99951171875,5250.0009765625,5617.00048828125,5622.0,5093.0,4640.0,4887.99951171875,4688.99951171875,4551.00048828125,4482.99951171875,4536.99951171875,4337.99951171875,3903.000732421875,3292.00048828125,2377.00048828125,2016.9998779296875],
+            "prediction_mamba_gnn": [4100.6640625,2953.198486328125,2085.420654296875,1450.315673828125,1049.170166015625,771.7300415039062,598.3267211914062,564.9037475585938,487.98663330078125,481.0771484375,510.3466491699219,526.178955078125,766.4049072265625,1133.5692138671875,1523.6512451171875,2067.3310546875,2709.635498046875,3985.913818359375,4862.7578125,5459.56640625,5079.220703125,5199.8359375,5697.9482421875,5696.3388671875,5535.9501953125,5764.00634765625,5884.77685546875,5912.29345703125,5865.2275390625,5894.55224609375,5914.0947265625,5830.576171875,5879.5966796875,5751.46484375,6008.33544921875,5768.4404296875,5524.1357421875,5655.85888671875,5587.30859375,5271.791015625,4828.302734375,4814.49267578125,4640.046875,4547.87841796875,4376.86328125,4330.0908203125,4089.786376953125,3816.029541015625,3127.66796875,2217.755615234375]
+        },
+        "top_predicted_regions_analysis": [
+            {
+                "rank": 1, "grid_id": 82, "lon_center": 117.0, "lat_center": 36.66,
+                "metrics": { "MAE": 118.0903, "RMSE": 163.0753, "total_true_volume": 77926, "total_predicted_volume": 79412 },
+                "time_series_data": {
+                    "true_values": [1296.0,952.0,755.0,561.0,436.0,363.0,297.0,258.0,224.0,200.0,176.0,225.0,314.0,425.0,579.0,791.0,1169.0,1546.0,1730.0,1936.0,2230.0,2478.0,2631.0,2552.0,2790.0,2694.0,2748.0,2713.0,2615.0,2574.0,2570.0,2323.0,2387.0,2507.0,2313.0,2221.0,2327.0,2257.0,1973.0,1771.0,1841.0,1789.0,1880.0,1760.0,1720.0,1706.0,1525.0,1325.0,827.0,646.0],
+                    "predicted_values": [1802.25,1259.55,760.45,514.9,417.74,306.48,268.32,263.22,234.67,246.98,254.99,234.5,304.29,494.16,647.6,812.8,1042.81,1476.81,1826.41,2056.63,1991.54,2184.01,2521.71,2516.35,2503.82,2585.35,2584.5,2601.2,2545.82,2499.18,2517.09,2488.6,2506.51,2382.28,2521.99,2461.59,2288.59,2308.39,2262.42,2075.9,1818.21,1783.49,1771.61,1846.97,1765.09,1695.8,1638.02,1525.03,1254.66,741.01]
+                }
+            },
+            {
+                "rank": 2, "grid_id": 83, "lon_center": 117.1333, "lat_center": 36.66,
+                "metrics": { "MAE": 66.2718, "RMSE": 84.2028, "total_true_volume": 46372, "total_predicted_volume": 47662 },
+                "time_series_data": {
+                    "true_values": [949.0,802.0,623.0,428.0,349.0,237.0,235.0,179.0,130.0,110.0,98.0,141.0,173.0,231.0,327.0,433.0,615.0,864.0,980.0,1022.0,1203.0,1267.0,1377.0,1261.0,1330.0,1420.0,1385.0,1406.0,1491.0,1478.0,1420.0,1360.0,1355.0,1403.0,1381.0,1345.0,1443.0,1477.0,1300.0,1163.0,1304.0,1219.0,1137.0,1077.0,1188.0,1113.0,1061.0,826.0,646.0,610.0],
+                    "predicted_values": [1143.61,870.8,709.77,563.2,382.71,289.59,192.55,180.05,157.27,127.52,136.81,146.39,235.2,295.32,388.54,489.21,599.22,784.17,1018.57,1177.35,1194.3,1315.07,1333.3,1385.88,1248.64,1311.57,1364.03,1318.14,1326.03,1419.39,1406.85,1382.97,1352.65,1375.65,1413.87,1396.13,1385.04,1437.39,1426.56,1372.98,1252.58,1279.05,1246.02,1177.98,1089.64,1104.77,1060.61,982.84,788.88,625.99]
+                }
+            },
+            {
+                "rank": 3, "grid_id": 81, "lon_center": 116.8667, "lat_center": 36.66,
+                "metrics": { "MAE": 46.6123, "RMSE": 60.4695, "total_true_volume": 16175, "total_predicted_volume": 16602 },
+                "time_series_data": {
+                    "true_values": [244.0,176.0,113.0,63.0,45.0,44.0,36.0,30.0,24.0,19.0,16.0,25.0,35.0,67.0,102.0,164.0,284.0,349.0,516.0,471.0,429.0,461.0,467.0,489.0,514.0,507.0,511.0,509.0,527.0,472.0,490.0,442.0,451.0,524.0,450.0,438.0,391.0,461.0,378.0,408.0,453.0,417.0,439.0,504.0,475.0,407.0,440.0,379.0,316.0,203.0],
+                    "predicted_values": [373.36,228.28,160.77,100.03,50.79,33.24,31.27,28.95,27.54,26.69,24.59,33.9,48.2,69.27,112.51,150.28,226.21,422.94,450.77,635.89,536.27,408.87,395.67,338.85,428.26,474.26,437.72,513.69,499.4,527.43,478.73,485.32,463.62,462.25,502.17,478.39,469.91,444.76,448.37,427.63,423.49,450.04,416.77,433.56,457.44,474.2,363.67,443.22,372.76,310.25]
+                }
+            },
+            {
+                "rank": 4, "grid_id": 86, "lon_center": 117.5333, "lat_center": 36.66,
+                "metrics": { "MAE": 27.5959, "RMSE": 36.595, "total_true_volume": 9283, "total_predicted_volume": 10106 },
+                "time_series_data": {
+                    "true_values": [115.0,89.0,67.0,46.0,32.0,30.0,20.0,11.0,8.0,12.0,9.0,6.0,20.0,35.0,100.0,118.0,166.0,228.0,222.0,201.0,186.0,269.0,324.0,294.0,266.0,346.0,317.0,302.0,310.0,358.0,365.0,358.0,335.0,288.0,274.0,256.0,314.0,299.0,252.0,234.0,218.0,233.0,207.0,226.0,240.0,231.0,182.0,130.0,79.0,55.0],
+                    "predicted_values": [143.36,94.3,65.68,49.73,32.32,21.98,20.73,14.68,9.92,12.61,27.27,19.48,17.63,35.17,69.56,161.27,186.73,258.99,306.21,302.89,225.52,251.5,328.09,362.76,304.81,305.28,330.59,284.27,281.74,311.05,346.65,311.62,344.67,354.18,317.77,317.61,312.7,330.29,319.18,277.19,260.17,252.52,231.74,215.97,231.31,237.09,233.98,178.96,125.81,71.16]
+                }
+            },
+            {
+                "rank": 5, "grid_id": 84, "lon_center": 117.2667, "lat_center": 36.66,
+                "metrics": { "MAE": 23.5857, "RMSE": 30.3854, "total_true_volume": 9848, "total_predicted_volume": 10020 },
+                "time_series_data": {
+                    "true_values": [124.0,102.0,63.0,41.0,43.0,29.0,28.0,19.0,18.0,14.0,24.0,20.0,32.0,60.0,89.0,146.0,241.0,295.0,309.0,301.0,302.0,326.0,326.0,283.0,321.0,336.0,333.0,329.0,282.0,306.0,272.0,281.0,271.0,305.0,253.0,235.0,293.0,286.0,262.0,287.0,262.0,235.0,241.0,252.0,237.0,216.0,189.0,147.0,106.0,76.0],
+                    "predicted_values": [182.81,116.66,82.92,49.28,30.5,26.63,21.89,21.89,17.41,18.54,19.06,31.76,34.42,50.51,82.34,134.29,194.82,293.05,363.64,337.45,291.27,256.06,263.48,264.44,251.64,291.39,307.42,315.85,323.9,297.8,301.58,284.65,288.91,293.39,307.44,281.01,269.82,278.75,295.74,265.92,274.48,270.74,255.26,236.63,249.02,238.25,219.51,192.44,146.87,96.49]
+                }
+            }
+        ]
+    };
+
+    // 时空网格经纬度定义 (对齐 Mamba-GNN 15x15 覆盖结构)
+    const lonMin = 116.0, lonMax = 118.0;
+    const latMin = 36.0, latMax = 37.8;
+    const lonStep = (lonMax - lonMin) / 15;
+    const latStep = (latMax - latMin) / 15;
+
+    // 计算球面距离
+    function calculateDistance(lng1, lat1, lng2, lat2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
+    // 折算网格 ID
+    function getGridId(lng, lat) {
+        if (lng < lonMin || lng > lonMax || lat < latMin || lat > latMax) return "时空边界外";
+        const x = Math.floor((lng - lonMin) / lonStep);
+        const y = Math.floor((lat - latMin) / latStep);
+        const boundedX = Math.max(0, Math.min(x, 14));
+        const boundedY = Math.max(0, Math.min(y, 14));
+        return boundedY * 15 + boundedX;
+    }
+
+    // 计算就近文本地名
+    function getNearestLocalAddress(lng, lat) {
+        let nearest = null;
+        let minDist = Infinity;
+        JINAN_LANDMARKS.forEach(lm => {
+            const dist = Math.hypot(lm.lng - lng, lm.lat - lat);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = lm;
+            }
+        });
+        if (minDist < 0.018) {
+            return `${nearest.name}`;
+        }
+        const gridId = getGridId(lng, lat);
+        return `济南市第 ${gridId} 时空网格核心区`;
+    }
+
+    // 💡 增强动态解算：自适应处理缺失详细时序的宏观长周期数据 (利用 hotspots 做系数增强)
+    function getLivePrediction(gridId) {
+        if (!experimentData) return 5;
+        let baseVal = 5;
+
+        // 如果长周期数据有明确的 grid 时序节点分析则优先采用
+        const topRegions = experimentData.top_predicted_regions_analysis || [];
+        const region = topRegions.find(r => r.grid_id === gridId);
+
+        if (region && region.time_series_data && region.time_series_data.predicted_values) {
+            baseVal = region.time_series_data.predicted_values[tickIndex] || 5;
+        } else {
+            // 没有细粒度数据时，按照当步的全局需求均摊
+            const baseGlobal = (experimentData.predictions_time_series && experimentData.predictions_time_series.prediction_mamba_gnn)
+                               ? experimentData.predictions_time_series.prediction_mamba_gnn[tickIndex]
+                               : 2500;
+            baseVal = (baseGlobal / 225) * (1 + Math.sin(tickIndex * 0.2 + gridId * 0.15) * 0.35);
+
+            // 兜底长周期静态 hotspots 权重放大逻辑（将宏观预测总额转化为实时的热点体现）
+            const staticHotspots = experimentData.hotspots || [];
+            const isHotspot = staticHotspots.find(s => s.grid_id === gridId);
+            if(isHotspot) {
+               // 排名越靠前的热点放大的系数越大 (例如 Rank 1 放 3倍，Rank 5 放大 1.8倍)
+               const multiplier = 3.5 - (isHotspot.rank * 0.35);
+               baseVal *= multiplier;
+            }
+        }
+
+        let secondFluctuation = Math.sin(Date.now() / 1000 + gridId) * 4;
+        return Math.max(1, Math.round(baseVal + secondFluctuation));
+    }
+
+    // 在页面载入后渲染快捷跳转按键，替代原生 Jinja 引擎渲染，消除模板报错
+    function renderLandmarkButtons() {
+        const container = document.getElementById('landmark-buttons-container');
+        if (!container) return;
+        JINAN_LANDMARKS.forEach(landmark => {
+            const btn = document.createElement('button');
+            btn.onclick = () => zoomToLandmark(landmark.lng, landmark.lat, landmark.name);
+            btn.className = "text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition active:scale-95 text-slate-600 font-bold";
+            const shortName = landmark.name.split(' ')[0];
+            btn.innerHTML = `<span>${landmark.icon}</span><span>${shortName}</span>`;
+            container.appendChild(btn);
+        });
+    }
+
+    // --- 1. 窗口载入与初始化 ---
+    window.addEventListener('load', function() {
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+        initLeafletMap();
+        startSpatiotemporalSync();
+        startBatteryDischargeSim();
+
+        // 默认直接开启听单雷达通道
+        initDriverOnlineState();
+
+        startDispatchAlertPolling(); // 启动调度报警检测心跳
+        writeLog("⚙️ 成功建立 济南车主高精定位与时空巡游推荐系统", "system");
+        writeLog("📡 握手成功：已与交通大脑决策中心(dispatch.html)建立双向链路机制", "success");
+
+        const tokenStr = localStorage.getItem('mamba_auth_token') || sessionStorage.getItem('mamba_auth_token');
+        if (tokenStr) {
+            try {
+                const userObj = JSON.parse(tokenStr);
+                driverName = `鲁A·${userObj.username || '星级师傅'}`;
+            } catch(e){}
+        }
+
+        instantGPSLocate();
+
+        // 同步顶部的 HUD 数据与 orders 页面完全一致
+        syncHudStatsWithOrders();
+
+        // 渲染地标快捷跳转按键
+        renderLandmarkButtons();
+    });
+
+    // 读取 orders 履约库，实时校准 HUD 面板数值，完美统一数据
+    function syncHudStatsWithOrders() {
+        let localTrips = [];
+        try {
+            localTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
+        } catch(e){
+            console.error("同步 HUD 时读取数据失败:", e);
+        }
+
+        // 如未产生新单，同 orders.html 默认展现静态记录
+        const fallbackTrips = [
+            { price: 28.50 },
+            { price: 45.00 }
+        ];
+        const finalTrips = localTrips.length > 0 ? localTrips : fallbackTrips;
+
+        let totalEarnings = 0;
+        finalTrips.forEach(t => {
+            totalEarnings += parseFloat(t.price || 0);
+        });
+
+        completedTripsCount = finalTrips.length;
+        todayEarnings = totalEarnings;
+
+        const earnText = document.getElementById('hudDriverEarnings');
+        const tripsText = document.getElementById('hudDriverTrips');
+        if (earnText) earnText.innerText = '¥ ' + todayEarnings.toFixed(2);
+        if (tripsText) tripsText.innerText = completedTripsCount + ' 次';
+    }
+
+    function initLeafletMap() {
+        try {
+            map = L.map('leafletMap', {
+                zoomControl: false,
+                attributionControl: true,
+                renderer: L.canvas()
+            }).setView([36.661156, 117.024967], 11);
+
+            L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+                attribution: '&copy; 高德地图 (AMap)',
+                subdomains: ['1', '2', '3', '4'],
+                maxZoom: 18
+            }).addTo(map);
+
+            map.on('click', function(e) {
+                handleMapClick(e.latlng.lng, e.latlng.lat);
+            });
+
+            drawSpatiotemporalMesh();
+
+            chargingMarkersGroup = L.layerGroup().addTo(map);
+            hotspotMarkersGroup = L.layerGroup().addTo(map);
+
+            updateMapDriverIcon(driverPosition);
+
+            const greenIcon = L.divIcon({
+                html: `<div class="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500 text-white border-2 border-white shadow-lg text-xs font-bold font-mono">A</div>`,
+                className: '', iconSize: [32, 32], iconAnchor: [16, 16]
+            });
+            const redIcon = L.divIcon({
+                html: `<div class="flex items-center justify-center w-8 h-8 rounded-full bg-rose-500 text-white border-2 border-white shadow-lg text-xs font-bold font-mono">B</div>`,
+                className: '', iconSize: [32, 32], iconAnchor: [16, 16]
+            });
+
+            pickupMarker = L.marker([36.661156, 117.024967], { icon: greenIcon }).addTo(map);
+            dropoffMarker = L.marker([36.850785, 117.265531], { icon: redIcon }).addTo(map);
+
+            map.removeLayer(pickupMarker);
+            map.removeLayer(dropoffMarker);
+
+        } catch (err) {
+            console.error("Leaflet 初始化失败:", err);
+            writeLog("❌ Leaflet 地图组件加载失败，请检查浏览器连接", "error");
+        }
+    }
+
+    // --- 2. 紧急调度令联动与警告窗机制 (全面升级以支持同标签页切换) ---
+    function startDispatchAlertPolling() {
+        // 1. 跨标签页监听存储事件 (极速响应不同标签页发出的指令)
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'mamba_dispatch_alert') {
+                try {
+                    if (!event.newValue) return;
+                    const alertData = JSON.parse(event.newValue);
+                    onDispatchAlertReceived(alertData);
+                } catch(e) {}
+            }
+        });
+
+        // 2. [核心修复点] 主动拉取最新缓存
+        // 修复同标签页内，管理员在 /dispatch 点击“发送”，紧接着点击导航栏切换至 /taxi 页面时，
+        // 由于原生 Storage Event 不触发，导致无法接到刚刚派发的订单错觉。
+        try {
+            const storedAlertStr = localStorage.getItem('mamba_dispatch_alert');
+            if (storedAlertStr) {
+                const alertData = JSON.parse(storedAlertStr);
+                const dismissedTs = sessionStorage.getItem('dismissed_alert_ts');
+
+                // 如果该调度令是最近 3 分钟内发出的，且当前会话页面未“接受/拒绝”过，则立刻激活警报
+                if (Date.now() - alertData.timestamp < 180000 && dismissedTs != alertData.timestamp) {
+                    setTimeout(() => onDispatchAlertReceived(alertData), 800);
+                }
+            }
+        } catch(e) {}
+    }
+
+    // 接收到广播派车令
+    function onDispatchAlertReceived(alertData) {
+        if (!alertData || alertData.timestamp <= lastAlertTimestamp) return;
+
+        lastAlertTimestamp = alertData.timestamp;
+        activeAlertData = alertData;
+
+        // 呈现警告弹窗
+        document.getElementById('alert-grid-name').innerText = alertData.grid_name;
+        document.getElementById('alert-grid-id').innerText = `Grid ${alertData.grid_id}`;
+        document.getElementById('alert-vehicle-count').innerText = `建议调配 +${alertData.count} 辆`;
+        document.getElementById('alert-target-time').innerText = `${alertData.target_time}`;
+
+        const modal = document.getElementById('dispatch-alert-modal');
+        modal.classList.remove('hidden');
+
+        // 在调度大舱内高亮显示当前处于调优引导状态
+        const monitorStatus = document.getElementById('dispatch-monitor-status');
+        const monitorDesc = document.getElementById('dispatch-monitor-desc');
+        if (monitorStatus) {
+            monitorStatus.innerText = 'COMMAND_RECEIVED';
+            monitorStatus.className = 'text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-mono font-bold animate-pulse';
+        }
+        if (monitorDesc) {
+            monitorDesc.innerHTML = `⚠️ <b>收到大脑指令</b>：网格 <b>Grid ${alertData.grid_id}</b> 产生严重缺口，需紧急补仓 <b>${alertData.count}</b> 辆。`;
+        }
+
+        writeLog(`⚠️ 【联动警告】：收到决策大厅调度引导令！目标网格 [${alertData.grid_name}] 预测产生溢出缺口！`, 'error');
+        showNotification("收到调度中心紧急派车令！", "error");
+    }
+
+    // 司机一键接受调度指派
+    function acceptDispatchAlert() {
+        if (!activeAlertData) return;
+
+        writeLog(`🎯 【接受指派】：已接受调度指令。将前往 [${activeAlertData.grid_name}] 进行补仓错位对齐。`, 'success');
+        showNotification("已接受调度，补贴激活！", "success");
+
+        // 向全局日志库直接写入响应状态，解决切换页面日志丢失问题
+        pushToDispatchLog(`📡 【在途鲁A响应】<b>${driverName}</b> 已确认接单，正全速驶向热区 <b>[${activeAlertData.grid_name}]</b>！`, 'success');
+
+        dismissDispatchAlert();
+
+        // 模拟接受调度，直接伪装创建为一个虚拟的“调度履约行程”
+        activeTripId = 'dispatch_task_' + activeAlertData.grid_id;
+        activeTrip = {
+            id: activeTripId,
+            passenger_name: `调度指令补仓 (Grid ${activeAlertData.grid_id})`,
+            pickup: { name: `车主当前定位点`, lng: driverPosition.lng, lat: driverPosition.lat, grid_id: getGridId(driverPosition.lng, driverPosition.lat) },
+            dropoff: { name: `${activeAlertData.grid_name}`, lng: activeAlertData.lon, lat: activeAlertData.lat, grid_id: activeAlertData.grid_id },
+            price: 20.0, // 调度补贴金
+            distance: parseFloat(calculateDistance(driverPosition.lng, driverPosition.lat, activeAlertData.lon, activeAlertData.lat).toFixed(1)),
+            duration: 10,
+            status: "accepted",
+            chat: [
+                { sender_id: "passenger", sender_name: "智能大脑", text: "您好，感谢星级师傅。请跟随红色高精导航线火速前往此溢出缺口网格完成补仓。", timestamp: "刚刚" }
+            ]
+        };
+
+        const dOrderPool = document.getElementById('d-order-pool');
+        const dActiveTask = document.getElementById('d-active-task');
+        if (dOrderPool) dOrderPool.classList.add('hidden');
+        if (dActiveTask) dActiveTask.classList.remove('hidden');
+
+        pickupMarker.setLatLng([driverPosition.lat, driverPosition.lng]).addTo(map);
+        dropoffMarker.setLatLng([activeAlertData.lat, activeAlertData.lon]).addTo(map);
+
+        // 为司机规划前往该补仓网格中心点的导航路径
+        navigateRouteToCoord(activeAlertData.lon, activeAlertData.lat, `紧急热区 [${activeAlertData.grid_name}]`);
+        syncDriverTaskUI();
+    }
+
+    // 忽略调度令
+    function dismissDispatchAlert() {
+        if (activeAlertData) {
+            sessionStorage.setItem('dismissed_alert_ts', activeAlertData.timestamp);
+        }
+        document.getElementById('dispatch-alert-modal').classList.add('hidden');
+    }
+
+    // --- 3. GPS 定位模块 ---
+    function instantGPSLocate() {
+        writeLog("🛰️ 正在请求高精卫星定位，尝试拉取经纬度...", "info");
+
+        if (!navigator.geolocation) {
+            writeLog("❌ 您的浏览器或运行环境不支持 HTML5 物理 GPS 定位", "error");
+            useFallbackLocate();
+            return;
+        }
+
+        const gpsOptions = {
+            enableHighAccuracy: true,
+            timeout: 6000,
+            maximumAge: 0
+        };
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const lng = position.coords.longitude;
+                const lat = position.coords.latitude;
+                gpsAccuracy = Math.round(position.coords.accuracy || 10);
+                currentSpeed = Math.round((position.coords.speed || 0) * 3.6);
+
+                updateDriverGPSPosition(lng, lat, currentSpeed, gpsAccuracy, "卫星直连");
+            },
+            (error) => {
+                writeLog(`⚠️ GPS 无法直连，已自动切换至高德路网基站孪生虚拟模式`, "error");
+                useFallbackLocate();
+            },
+            gpsOptions
+        );
+    }
+
+    function startContinuousGPSTracking() {
+        if (gpsWatchId) {
+            navigator.geolocation.clearWatch(gpsWatchId);
+        }
+
+        if (navigator.geolocation) {
+            gpsWatchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    const lng = position.coords.longitude;
+                    const lat = position.coords.latitude;
+                    gpsAccuracy = Math.round(position.coords.accuracy || 8);
+                    currentSpeed = Math.round((position.coords.speed || 0) * 3.6);
+                    updateDriverGPSPosition(lng, lat, currentSpeed, gpsAccuracy, "高精卫星追踪中");
+                },
+                (error) => {},
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        }
+    }
+
+    function stopContinuousGPSTracking() {
+        if (gpsWatchId) {
+            navigator.geolocation.clearWatch(gpsWatchId);
+            gpsWatchId = null;
+        }
+    }
+
+    // 手动微调后同步新定位并触发听单重新解算
+    function useFallbackLocate() {
+        const randomOffsetLng = (Math.random() - 0.5) * 0.015;
+        const randomOffsetLat = (Math.random() - 0.5) * 0.015;
+        const fallbackLng = 117.024967 + randomOffsetLng;
+        const fallbackLat = 36.661156 + randomOffsetLat;
+        updateDriverGPSPosition(fallbackLng, fallbackLat, 0, 45, "基站精细寻址");
+    }
+
+    function updateDriverGPSPosition(lng, lat, speed, accuracy, source = "卫星追踪中") {
+        driverPosition = { lng, lat };
+
+        const coordsDisplay = document.getElementById('gps-coords-display');
+        const gridDisplay = document.getElementById('gps-grid-display');
+        const speedDisplay = document.getElementById('gps-speed-display');
+
+        if (coordsDisplay) coordsDisplay.innerText = `${lng.toFixed(5)} °E, ${lat.toFixed(5)} °N`;
+
+        const gridId = getGridId(lng, lat);
+        const nearAddr = getNearestLocalAddress(lng, lat);
+        if (gridDisplay) gridDisplay.innerText = `Grid ${gridId} (${nearAddr})`;
+
+        if (speedDisplay) speedDisplay.innerText = `${speed.toFixed(1)} km/h | 精度: ±${accuracy}m`;
+
+        updateMapDriverIcon(driverPosition);
+
+        writeLog(`🛰️ GPS 定位刷新: [${source}] (精度: ±${accuracy}m)`);
+
+        if (isDriverOnline) {
+            updateProximityRecommendationRadar();
+        }
+    }
+
+    function updateMapDriverIcon(loc) {
+        if (!loc || !map) return;
+        try {
+            const carIcon = L.divIcon({
+                html: `<div class="gps-pulse bg-amber-400 text-slate-950 p-1.5 rounded-full border-2 border-white shadow-2xl text-sm font-bold font-mono font-sans flex items-center justify-center">🚕</div>`,
+                className: '', iconSize: [32, 32], iconAnchor: [16, 16]
+            });
+
+            if (!driverMarker) {
+                driverMarker = L.marker([loc.lat, loc.lng], { icon: carIcon }).addTo(map);
+
+                driverMarker.bindTooltip(`
+                    <div class="text-xs space-y-1 p-1">
+                        <div class="font-bold text-amber-500 flex items-center gap-1">🚕 我的鲁A专车 (GPS追踪)</div>
+                        <div class="border-t border-slate-100 pt-1">网格: <span class="font-mono text-cyan-600 font-bold">Grid ${getGridId(loc.lng, loc.lat)}</span></div>
+                    </div>
+                `, { permanent: false, direction: 'top' });
+            } else {
+                driverMarker.setLatLng([loc.lat, loc.lng]);
+            }
+        } catch (e) {
+            console.error("更新车主标记坐标出错:", e);
+        }
+    }
+
+    // --- 4. 绘制 225 个 Mamba-GNN 时空网格 ---
+    function drawSpatiotemporalMesh() {
+        if (!map) return;
+        amapGridPolygons = [];
+        for (let i = 0; i < 225; i++) {
+            const gridY = Math.floor(i / 15);
+            const gridX = i % 15;
+
+            const cellLatMin = latMin + gridY * latStep;
+            const cellLatMax = cellLatMin + latStep;
+            const cellLonMin = lonMin + gridX * lonStep;
+            const cellLonMax = cellLonMin + lonStep;
+
+            const bounds = [
+                [cellLatMin, cellLonMin],
+                [cellLatMax, cellLonMax]
+            ];
+
+            try {
+                const polygon = L.rectangle(bounds, {
+                    color: "rgba(239, 68, 68, 0.08)",
+                    weight: 1,
+                    fillColor: "#ef4444",
+                    fillOpacity: 0.0,
+                    interactive: true
+                }).addTo(map);
+
+                polygon.on('mouseover', () => probeGridNode(i, cellLonMin + lonStep/2, cellLatMin + latStep/2, polygon));
+                polygon.on('mouseout', () => resetHUD());
+
+                polygon.on('click', (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    if (activeGridId === i) {
+                        activeGridId = null;
+                        writeLog("🔍 已取消选定网格", "system");
+                    } else {
+                        activeGridId = i;
+                        writeLog(`🎯 锁定网格 Grid ${i}，可获取该区域精准供需及车辆需求走势`, "success");
+                    }
+                });
+
+                amapGridPolygons.push(polygon);
+            } catch (e) {
+                console.error("绘制网格矩形失败:", e);
+            }
+        }
+    }
+
+    function probeGridNode(gridId, lon, lat, polygon) {
+        hoverGridId = gridId;
+
+        let predVal = Math.round(getLivePrediction(gridId));
+        let trueVal = 0;
+
+        // 嚴格從 JSON 陣列中讀取真實歷史數據，保證與 realtime1.html 顯示一致
+        const topRegions = experimentData?.top_predicted_regions_analysis || [];
+        const region = topRegions.find(r => r.grid_id === gridId);
+        if (region && region.time_series_data && region.time_series_data.true_values) {
+            trueVal = Math.round(region.time_series_data.true_values[tickIndex] || 0);
+        } else {
+            // 若為非 Top5 的普通網格兜底
+            trueVal = Math.max(1, Math.round(predVal * (1 + (Math.sin(tickIndex) * 0.1))));
+        }
+
+        let statusText = predVal > 80 ? '<span class="text-rose-600 font-extrabold">🔥 极端溢出</span>' :
+                         predVal > 40 ? '<span class="text-amber-600 font-bold">⚡ 需求上涨</span>' :
+                         '<span class="text-emerald-600 font-bold">🟢 供需充沛</span>';
+
+        const contentHtml = `
+            <div class="text-xs space-y-1 p-2 bg-white text-slate-800 rounded-lg shadow-2xl border border-slate-200 pointer-events-none">
+                <div class="font-extrabold text-amber-500 flex items-center gap-1">🤖 Grid ${gridId} 时空大脑研判</div>
+                <div class="border-t border-slate-150 my-1"></div>
+                <div>🔮 Mamba 实时预测: <span class="font-mono font-bold text-cyan-600">${predVal} 单/秒</span></div>
+                <div>📊 历史同期真实: <span class="font-mono text-slate-500">${trueVal} 单/秒</span></div>
+                <div>🚦 时空供需状态: ${statusText}</div>
+            </div>
+        `;
+
+        if (polygon) {
+            if (polygon.getTooltip()) {
+                polygon.setTooltipContent(contentHtml);
+            } else {
+                polygon.bindTooltip(contentHtml, { sticky: true, opacity: 0.98 });
+            }
+        }
+
+        if (amapGridPolygons[gridId]) {
+            try {
+                amapGridPolygons[gridId].setStyle({
+                    color: "#ef4444",
+                    weight: 2
+                });
+            } catch (e) {}
+        }
+    }
+
+    function resetHUD() {
+        if (hoverGridId !== null && amapGridPolygons[hoverGridId]) {
+            try {
+                amapGridPolygons[hoverGridId].setStyle({
+                    color: showHeatmapToggle ? "rgba(220, 38, 38, 0.25)" : "rgba(220, 38, 38, 0.08)",
+                    weight: 1
+                });
+            } catch (e) {}
+        }
+        hoverGridId = null;
+    }
+
+    // 💡 直接使用硬编码数据
+    function startSpatiotemporalSync() {
+        experimentData = EMBEDDED_EXPERIMENT_DATA;
+        writeLog("⚡ 成功启动内嵌 Mamba-GNN 长周期时空孪生预测数据 (本地硬编码态)", "success");
+        onSyncSuccess();
+    }
+
+    function onSyncSuccess() {
+        runTemporalTick();
+        setInterval(runTemporalTick, 1000);
+    }
+
+    // 动态根据数据源的长度计算最大周期步数
+    function runTemporalTick() {
+        if (!experimentData) return;
+
+        let maxSteps = 150;
+        if (experimentData.predictions_time_series && experimentData.predictions_time_series.ground_truth) {
+            maxSteps = experimentData.predictions_time_series.ground_truth.length;
+        }
+
+        // --- 修復關鍵點：與 realtime1.html 採用相同的 Date.now() 絕對時間計算法 ---
+        tickIndex = Math.floor(Date.now() / 1000) % maxSteps;
+
+        // A. 所有的网格重涂
+        repaintSpatiotemporalHeatmap();
+
+        // B. 在地图上实时渲染客流预测具体数字
+        updateMapPredictionLabels();
+
+        // C. 核心：高时效重排临近高需求卡片与听单池
+        updateProximityRecommendationRadar();
+
+        if (hoverGridId !== null && amapGridPolygons[hoverGridId]) {
+            probeGridNode(hoverGridId, null, null, amapGridPolygons[hoverGridId]);
+        }
+    }
+
+    // 将 Mamba 实秒预测客流量直接渲染到地图上
+    function updateMapPredictionLabels() {
+        if (!map || !experimentData) return;
+        hotspotMarkersGroup.clearLayers();
+
+        if (!showHeatmapToggle) return;
+
+        // 对齐可能出现的长短周期数据结构格式：优先用细粒度的 time_series_data
+        const regions = experimentData.top_predicted_regions_analysis || [];
+        const staticHotspots = experimentData.hotspots || [];
+
+        // 统一处理网格数据提取
+        let mappedRegions = regions.length > 0 ? regions : staticHotspots;
+
+        mappedRegions.forEach(reg => {
+            const gridId = reg.grid_id;
+            const livePredVal = Math.round(getLivePrediction(gridId));
+
+            const gridY = Math.floor(gridId / 15);
+            const gridX = gridId % 15;
+            const cellLat = latMin + gridY * latStep + latStep/2;
+            const cellLon = lonMin + gridX * lonStep + lonStep/2;
+
+            let badgeColor = "bg-red-650 text-white border-red-500 animate-pulse";
+            if (livePredVal < 80) badgeColor = "bg-red-400 text-white border-red-300";
+
+            let gridName = `Grid ${gridId}`;
+            if (gridId === 82) gridName = "泉城广场";
+            else if (gridId === 83) gridName = "省博物馆";
+            else if (gridId === 81) gridName = "趵突泉";
+            else if (gridId === 84) gridName = "奥体中心";
+            else if (gridId === 86) gridName = "百脉泉";
+
+            const labelIcon = L.divIcon({
+                html: `
+                    <div class="flex flex-col items-center justify-center px-2 py-1 rounded-md shadow-2xl text-[9px] font-bold border leading-tight ${badgeColor} transform -translate-x-1/2 -translate-y-1/2" style="min-width: 75px; background-color: rgb(220 38 38);">
+                        <span class="truncate block w-full text-center opacity-90">${gridName}</span>
+                        <span class="mt-0.5 font-mono block text-center font-extrabold text-[10px]">🔮 ${livePredVal} 单</span>
+                    </div>
+                `,
+                className: '',
+                iconSize: [80, 32],
+                iconAnchor: [40, 16]
+            });
+
+            const labelMarker = L.marker([cellLat, cellLon], { icon: labelIcon, interactive: false });
+            hotspotMarkersGroup.addLayer(labelMarker);
+        });
+    }
+
+    function updateProximityRecommendationRadar() {
+        if (!isDriverOnline || activeTrip) return;
+        refreshOrderPool();
+    }
+
+    // 重新涂装热力网格饱和度
+    function repaintSpatiotemporalHeatmap() {
+        if (!experimentData || amapGridPolygons.length === 0) return;
+
+        for (let i = 0; i < 225; i++) {
+            const polygon = amapGridPolygons[i];
+            if (polygon) {
+                try {
+                    if (showHeatmapToggle) {
+                        const predVal = getLivePrediction(i);
+                        const maxValScale = 120;
+                        const ratio = Math.min(1, predVal / maxValScale);
+
+                        let color = "#fee2e2"; // 浅粉红
+                        if (ratio > 0.8) color = "#991b1b"; // 极深红
+                        else if (ratio > 0.6) color = "#b91c1c"; // 深红
+                        else if (ratio > 0.4) color = "#ef4444"; // 亮红
+                        else if (ratio > 0.2) color = "#f87171"; // 红
+                        else if (ratio > 0.05) color = "#fca5a5"; // 浅红
+
+                        polygon.setStyle({
+                            fillColor: color,
+                            fillOpacity: predVal > 0 ? (0.15 + ratio * 0.55) : 0.02,
+                            color: "rgba(220, 38, 38, 0.15)"
+                        });
+                    } else {
+                        polygon.setStyle({
+                            fillOpacity: 0.0,
+                            color: "rgba(220, 38, 38, 0.08)"
+                        });
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+
+    function toggleHeatmapOverlay() {
+        const toggleEl = document.getElementById('heatmap-toggle');
+        showHeatmapToggle = toggleEl ? toggleEl.checked : false;
+        writeLog(showHeatmapToggle ? "💡 已载入 Mamba-GNN 深度学习时空需求预测热力图" : "💡 已隐藏时空热力层");
+        repaintSpatiotemporalHeatmap();
+        updateMapPredictionLabels();
+    }
+
+    // --- 5. 充电雷达功能开发 ---
+    function toggleChargingStations() {
+        const toggleEl = document.getElementById('charging-toggle');
+        showChargingToggle = toggleEl ? toggleEl.checked : false;
+
+        if (chargingMarkersGroup) {
+            chargingMarkersGroup.clearLayers();
+        }
+
+        if (showChargingToggle) {
+            CHARGING_STATIONS.forEach(station => {
+                const thunderIcon = L.divIcon({
+                    html: `<div class="bg-emerald-500 text-white p-1 rounded-full border border-white shadow-lg text-xs font-bold animate-pulse flex items-center justify-center">⚡</div>`,
+                    className: '', iconSize: [24, 24], iconAnchor: [12, 12]
+                });
+
+                const marker = L.marker([station.lat, station.lng], { icon: thunderIcon });
+                // 💡 强化站点弹出窗，引入尊贵绿一键充能机制
+                marker.bindPopup(`
+                    <div class="text-xs space-y-1.5 p-1 text-slate-800">
+                        <div class="font-bold text-emerald-600 flex items-center gap-1">⚡ ${station.name}</div>
+                        <div class="border-t border-slate-150 pt-1 text-slate-500 font-medium">提供 ${station.power}</div>
+                        <button onclick="acceptChargingMission('${station.name}', ${station.lng}, ${station.lat})" class="w-full mt-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-1.5 rounded-lg text-[10px] text-center transition flex items-center justify-center gap-1">
+                            <i data-lucide="zap" class="w-3 h-3 text-white"></i> 一键空载前往补能
+                        </button>
+                    </div>
+                `);
+                chargingMarkersGroup.addLayer(marker);
+            });
+            writeLog("⚡ 成功开启济南市充电补能雷达！附近充电网点已标注在地图中");
+        } else {
+            writeLog("⚡ 已关闭充电雷达显示");
+        }
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    // 💡 专属充能通道激活 - 开启前往充电桩流程并改变右侧栏
+    function acceptChargingMission(name, lng, lat) {
+        writeLog(`⚡ 【发起补能】：开启前往 [${name}] 的低损耗补能规划路径。`, 'success');
+        showNotification("已规划前往该充电站", "success");
+
+        activeTripId = 'charging_' + Date.now();
+        activeTrip = {
+            id: activeTripId,
+            passenger_name: `⚡ 新新能源极速补能: ${name}`,
+            pickup: { name: `车主当前定位点`, lng: driverPosition.lng, lat: driverPosition.lat, grid_id: getGridId(driverPosition.lng, driverPosition.lat) },
+            dropoff: { name: name, lng: lng, lat: lat, grid_id: getGridId(lng, lat) },
+            price: 0.0,
+            distance: parseFloat(calculateDistance(driverPosition.lng, driverPosition.lat, lng, lat).toFixed(1)),
+            status: "charging_navigating",
+            isChargingTask: true,
+            chat: [
+                { sender_id: "passenger", sender_name: "系统小助手", text: "已成功对齐智能大功率充电网络。请您安全驾驶驶向此充能站点，到达后接入充能枪开始补能。", timestamp: "刚刚" }
+            ]
+        };
+
+        const dOrderPool = document.getElementById('d-order-pool');
+        const dActiveTask = document.getElementById('d-active-task');
+        if (dOrderPool) dOrderPool.classList.add('hidden');
+        if (dActiveTask) dActiveTask.classList.remove('hidden');
+
+        pickupMarker.setLatLng([driverPosition.lat, driverPosition.lng]).addTo(map);
+        dropoffMarker.setLatLng([lat, lng]).addTo(map);
+
+        navigateRouteToCoord(lng, lat, `充电站 [${name}]`);
+        syncDriverTaskUI();
+    }
+
+    // 💡 开启大功率充能动作 - 模拟电量极速攀升
+    function startChargingAtStation() {
+        if (chargingTimerId) clearInterval(chargingTimerId);
+
+        activeTrip.status = 'charging_active';
+        writeLog(`🔌 [超快充开启]：车辆已成功接入大功率补能电枪，实时输入功率 180kW。`, 'success');
+        showNotification("开始充电中...", "success");
+
+        syncDriverTaskUI();
+
+        chargingTimerId = setInterval(() => {
+            if (batteryLevel < 100) {
+                // 充电速率：每次增加 4%
+                batteryLevel += 4;
+                if (batteryLevel > 100) batteryLevel = 100;
+                updateBatteryUI();
+
+                // 更新右侧专属卡片内的充电显示
+                const liveChargePct = document.getElementById('live-charging-pct');
+                const liveChargeBar = document.getElementById('live-charging-bar');
+                if (liveChargePct) liveChargePct.innerText = `${batteryLevel}%`;
+                if (liveChargeBar) liveChargeBar.style.width = `${batteryLevel}%`;
+
+                writeLog(`⚡ [在充 SOC 电量]：车辆电池电量已恢复至 ${batteryLevel}%`, 'success');
+            } else {
+                completeChargingProcess();
+            }
+        }, 800);
+    }
+
+    // 💡 充电圆满完成重置
+    function completeChargingProcess() {
+        if (chargingTimerId) {
+            clearInterval(chargingTimerId);
+            chargingTimerId = null;
+        }
+
+        batteryLevel = 100;
+        updateBatteryUI();
+
+        writeLog("🔋 【充能结束】：补能指令达成！当前新能源车辆已达 100% 满电完美状态，重开空载雷达听单。", "system");
+        showNotification("充能完毕！电量 100%", "success");
+
+        // 彻底清空复位
+        activeTrip = null;
+        activeTripId = null;
+
+        const dActiveTask = document.getElementById('d-active-task');
+        const dOrderPool = document.getElementById('d-order-pool');
+        if (dActiveTask) dActiveTask.classList.add('hidden');
+        if (dOrderPool) dOrderPool.classList.remove('hidden');
+
+        try {
+            map.removeLayer(pickupMarker);
+            map.removeLayer(dropoffMarker);
+            if (currentRoutePolyline) map.removeLayer(currentRoutePolyline);
+        } catch(e){}
+
+        refreshOrderPool();
+    }
+
+    // 取消补能
+    function cancelChargingMission() {
+        if (chargingTimerId) {
+            clearInterval(chargingTimerId);
+            chargingTimerId = null;
+        }
+
+        writeLog("⚡ 补能寻站任务已被手动终止，车辆退出充能路线。", "system");
+        showNotification("已退出补能模式", "info");
+
+        activeTrip = null;
+        activeTripId = null;
+
+        const dActiveTask = document.getElementById('d-active-task');
+        const dOrderPool = document.getElementById('d-order-pool');
+        if (dActiveTask) dActiveTask.classList.add('hidden');
+        if (dOrderPool) dOrderPool.classList.remove('hidden');
+
+        try {
+            map.removeLayer(pickupMarker);
+            map.removeLayer(dropoffMarker);
+            if (currentRoutePolyline) map.removeLayer(currentRoutePolyline);
+        } catch(e){}
+
+        refreshOrderPool();
+    }
+
+    function navigateRouteToCoord(targetLng, targetLat, destName) {
+        if (!map) return;
+
+        if (currentRoutePolyline) {
+            map.removeLayer(currentRoutePolyline);
+        }
+
+        const start = [driverPosition.lat, driverPosition.lng];
+        const dest = [targetLat, targetLng];
+
+        currentRoutePolyline = L.polyline([start, dest], {
+            color: '#6366f1', // 时空决策引导专属紫色
+            weight: 5,
+            dashArray: '10, 10',
+            opacity: 0.95
+        }).addTo(map);
+
+        map.setView(start, 12);
+        showNotification(`导航至: ${destName}`);
+    }
+
+    // --- 7. 默认自启动听单与后台雷达保障 ---
+    function initDriverOnlineState() {
+        isDriverOnline = true;
+
+        startOnlineTimer();
+        startContinuousGPSTracking();
+        startDriverHeartbeat();
+
+        writeLog(`📡 智能调度雷达已自动就位（自启态已激活）！随时待命决策大厅派车指令`, "success");
+    }
+
+    // 计时器重构：保证绝对时间差值计算，杜绝切换页面导致的 setInterval 挂起问题
+    function startOnlineTimer() {
+        if (onlineTimerInterval) clearInterval(onlineTimerInterval);
+
+        const tick = () => {
+            // 同步写入旧缓存，兼容其他可能读取该字段的逻辑
+            const nowSeconds = Math.floor(Date.now() / 1000);
+            onlineSeconds = Math.max(0, nowSeconds - onlineStartTime);
+            localStorage.setItem('mamba_online_seconds', onlineSeconds);
+
+            updateTimerDisplay();
+        };
+
+        tick(); // 载入即刻更新一次 HUD 界面，避免 1 秒骨架抖动
+        onlineTimerInterval = setInterval(tick, 1000);
+    }
+
+    // 核心拆分：更新 HUD 计时器文字渲染为本地实时时间
+    function updateTimerDisplay() {
+        const now = new Date();
+        const hrs = String(now.getHours()).padStart(2, '0');
+        const mins = String(now.getMinutes()).padStart(2, '0');
+        const secs = String(now.getSeconds()).padStart(2, '0');
+
+        const timerEl = document.getElementById('hudOnlineTime');
+        if (timerEl) timerEl.innerText = `${hrs}:${mins}:${secs}`;
+    }
+
+    function startBatteryDischargeSim() {
+        setInterval(() => {
+            if (isDriverOnline && batteryLevel > 1 && (!activeTrip || !activeTrip.isChargingTask || activeTrip.status !== 'charging_active')) {
+                batteryLevel--;
+                updateBatteryUI();
+                if (batteryLevel < 15) {
+                    writeLog("🔋 【电量低警告】：当前车载SOC剩余不足15%，请尽快充电！", "error");
+                    showNotification("电量过低，请前往补能", "error");
+                }
+            }
+        }, 15000);
+    }
+
+    function updateBatteryUI() {
+        const percentEl = document.getElementById('battery-percentage');
+        const barEl = document.getElementById('battery-bar');
+        if (percentEl) percentEl.innerText = `${batteryLevel}%`;
+        if (barEl) {
+            barEl.style.width = `${batteryLevel}%`;
+            if (batteryLevel < 20) {
+                barEl.className = "bg-rose-500 h-2 rounded-full transition-all duration-500";
+            } else if (batteryLevel < 40) {
+                barEl.className = "bg-amber-500 h-2 rounded-full transition-all duration-500";
+            } else {
+                barEl.className = "bg-emerald-500 h-2 rounded-full transition-all duration-500";
+            }
+        }
+    }
+
+    // --- 8. 派单池与接受派单 ---
+    function startDriverHeartbeat() {
+        if (driverOnlineIntervalId) clearInterval(driverOnlineIntervalId);
+
+        refreshOrderPool();
+
+        driverOnlineIntervalId = setInterval(() => {
+            if (!activeTrip) {
+                refreshOrderPool();
+            } else {
+                // 如果是补能流程，我们不需要向常规trip服务端轮询更新状态
+                if (activeTrip.isChargingTask) return;
+
+                // 纯前端模拟，依赖本地内存更新 activeTrip 状态
+                syncDriverTaskUI();
+            }
+        }, 2000);
+    }
+
+    // 生成 6 笔推荐订单
+    function generateMockIncomingOrders() {
+        const surnames = ["王", "刘", "陈", "张", "赵", "李", "孙", "周", "吴", "郑"];
+        const genders = ["先生", "女士"];
+
+        const selectedLandmarks = JINAN_LANDMARKS.slice().sort(() => Math.random() - 0.5);
+
+        // 6个偏移点位保证附近分布
+        const offsets = [
+            { lng: 0.005, lat: 0.004 },
+            { lng: -0.010, lat: 0.009 },
+            { lng: 0.021, lat: -0.015 },
+            { lng: -0.035, lat: -0.030 },
+            { lng: 0.012, lat: 0.018 },
+            { lng: -0.022, lat: -0.012 }
+        ];
+
+        let list = [];
+        for (let i = 0; i < 6; i++) {
+            const pLng = driverPosition.lng + offsets[i].lng;
+            const pLat = driverPosition.lat + offsets[i].lat;
+            const pickupGridId = getGridId(pLng, pLat);
+
+            const pName = surnames[Math.floor(Math.random() * surnames.length)] + genders[Math.floor(Math.random() * genders.length)];
+
+            const dropoffObj = selectedLandmarks[i % selectedLandmarks.length];
+            const distToPickup = calculateDistance(driverPosition.lng, driverPosition.lat, pLng, pLat);
+            const travelDist = calculateDistance(pLng, pLat, dropoffObj.lng, dropoffObj.lat);
+            const price = Math.max(10, Math.round(travelDist * 2.8 + 8));
+
+            list.push({
+                id: "trip_" + Math.floor(Math.random() * 100000) + "_" + i,
+                passenger_name: pName,
+                pickup: { name: getNearestLocalAddress(pLng, pLat), lng: pLng, lat: pLat, grid_id: pickupGridId },
+                dropoff: { name: dropoffObj.name, lng: dropoffObj.lng, lat: dropoffObj.lat, grid_id: getGridId(dropoffObj.lng, dropoffObj.lat) },
+                price: price,
+                distance: parseFloat(travelDist.toFixed(1)),
+                dist_to_driver: distToPickup,
+                status: "searching"
+            });
+        }
+        return list;
+    }
+
+    function refreshOrderPool() {
+        const poolList = document.getElementById('d-available-list');
+        if (!poolList) return;
+
+        let rawTrips = generateMockIncomingOrders();
+
+        rawTrips.forEach(trip => {
+            const pickupLivePred = getLivePrediction(trip.pickup.grid_id);
+            const dropoffLivePred = getLivePrediction(trip.dropoff.grid_id);
+            trip.pickup_predicted_volume = pickupLivePred;
+            trip.dropoff_predicted_volume = dropoffLivePred;
+
+            trip.recommend_score = (pickupLivePred * 0.7 + dropoffLivePred * 0.3) / (trip.dist_to_driver + 0.1);
+        });
+
+        rawTrips.sort((a, b) => b.recommend_score - a.recommend_score);
+
+        const poolCountEl = document.getElementById('d-pool-count');
+        if (poolCountEl) poolCountEl.innerText = `时空AI重排 · 附近 6 笔`;
+
+        poolList.innerHTML = '';
+        rawTrips.forEach((trip, index) => {
+            const item = document.createElement('div');
+
+            const isHighlyRecommended = index < 2 && trip.recommend_score > 15;
+            const recommendBadge = isHighlyRecommended
+                ? `<span class="text-[9px] bg-red-500 border border-red-400 text-white px-2 py-0.5 rounded-full font-bold animate-pulse flex items-center gap-0.5"><i data-lucide="sparkles" class="w-2.5 h-2.5"></i> 时空强推 ⭐⭐⭐⭐⭐</span>`
+                : `<span class="text-[9px] bg-slate-100 border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">不推荐 (客流偏低/距离远)</span>`;
+
+            const borderStyle = isHighlyRecommended
+                ? 'border-red-400 ring-2 ring-red-400/15 bg-red-50/20'
+                : 'border-slate-200 bg-slate-50 hover:border-slate-300';
+
+            item.className = `border rounded-xl p-3 flex flex-col gap-2 transition shadow-sm animate-fadeIn ${borderStyle}`;
+
+            item.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div class="space-y-1">
+                        ${recommendBadge}
+                        <h5 class="text-xs font-bold text-slate-800 mt-1">${trip.passenger_name}</h5>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-sm font-black text-amber-500">¥${trip.price.toFixed(1)}</span>
+                        <p class="text-[9px] text-slate-400 mt-0.5">运程: ${trip.distance} km</p>
+                    </div>
+                </div>
+                <div class="bg-white p-2 rounded text-[9px] space-y-1 text-slate-500 border border-slate-100">
+                    <div class="flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                        <b class="text-slate-700 font-bold">起:</b> <span class="truncate">${trip.pickup.name}</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
+                        <b class="text-slate-700 font-bold">终:</b> <span class="truncate">${trip.dropoff.name}</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-1.5 text-[9px] text-slate-500 bg-white/40 p-1.5 rounded font-mono px-2">
+                    <div>上车接驾: <b class="text-slate-700 font-bold">${trip.dist_to_driver.toFixed(2)}km</b></div>
+                    <div class="text-indigo-600 font-bold text-right">综合指数: ${trip.recommend_score.toFixed(1)}</div>
+                    <div class="col-span-2 flex justify-between border-t border-slate-100 pt-1 mt-0.5 text-[8.5px]">
+                        <span class="text-emerald-600 font-bold">🔮 起点预测客流: ${trip.pickup_predicted_volume} 单/秒</span>
+                        <span class="text-indigo-600 font-bold">📍 终点预测需求: ${trip.dropoff_predicted_volume} 单/秒</span>
+                    </div>
+                </div>
+
+                <button onclick="driverAcceptTrip('${trip.id}', '${trip.passenger_name}', ${trip.pickup.lng}, ${trip.pickup.lat}, ${trip.dropoff.lng}, ${trip.dropoff.lat}, ${trip.price}, ${trip.distance})" class="w-full bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold py-1.5 rounded text-xs transition shadow-sm">
+                    接单履约 (锁定双端时空供需)
+                </button>
+            `;
+            poolList.appendChild(item);
+        });
+
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    function driverAcceptTrip(tripId, passName, pLng, pLat, dLng, dLat, price, distance) {
+        activeTripId = tripId;
+        activeTrip = {
+            id: tripId,
+            passenger_name: passName,
+            pickup: { name: getNearestLocalAddress(pLng, pLat), lng: pLng, lat: pLat, grid_id: getGridId(pLng, pLat) },
+            dropoff: { name: getNearestLocalAddress(dLng, dLat), lng: dLng, lat: dLat, grid_id: getGridId(dLng, dLat) },
+            price: price,
+            distance: distance,
+            duration: Math.round(distance * 1.8),
+            status: "accepted",
+            chat: [
+                { sender_id: "passenger", sender_name: "乘客", text: "师傅您好，辛苦跟着高精路线过来接我。", timestamp: "刚刚" }
+            ]
+        };
+
+        showNotification("抢单成功，导航已装载！", "success");
+        writeLog(`🎉 您已承接 [${activeTrip.passenger_name}] 的时空强推订单，正在前往上车点。`);
+
+        const dOrderPool = document.getElementById('d-order-pool');
+        const dActiveTask = document.getElementById('d-active-task');
+        if (dOrderPool) dOrderPool.classList.add('hidden');
+        if (dActiveTask) dActiveTask.classList.remove('hidden');
+
+        pickupMarker.setLatLng([pLat, pLng]).addTo(map);
+        dropoffMarker.setLatLng([dLat, dLng]).addTo(map);
+
+        navigateRouteToCoord(pLng, pLat, "上车点");
+
+        syncDriverTaskUI();
+    }
+
+    // --- 9. 任务进行中控制与导航履约 ---
+    function syncDriverTaskUI() {
+        if (!activeTrip) return;
+
+        const dActiveTask = document.getElementById('d-active-task');
+        if (!dActiveTask) return;
+
+        // 💡 针对补能调度任务的专属亮色精美交互界面渲染
+        if (activeTrip.isChargingTask) {
+            const status = activeTrip.status;
+            let flowButtonHtml = "";
+
+            if (status === 'charging_navigating') {
+                flowButtonHtml = `
+                    <div class="space-y-2 mt-2">
+                        <button onclick="simulateDriverJourney()" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold py-2.5 rounded-xl transition shadow flex items-center justify-center gap-1.5 animate-pulse">
+                            <i data-lucide="navigation" class="w-4 h-4 text-white"></i> 🚗 模拟行驶前往充电站
+                        </button>
+                        <button onclick="cancelChargingMission()" class="w-full bg-transparent hover:bg-slate-50 text-slate-400 py-1.5 rounded-lg text-xs transition text-center">
+                            取消前往并开启听单
+                        </button>
+                    </div>
+                `;
+
+                dActiveTask.innerHTML = `
+                    <div class="bg-emerald-50/70 border border-emerald-200 rounded-xl p-4 flex flex-col gap-3">
+                        <div class="flex justify-between items-center border-b border-emerald-100 pb-2">
+                            <div>
+                                <span class="text-[8px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase">⚡ 新能源空载补能</span>
+                                <h4 class="text-xs font-bold text-slate-800 mt-1.5">${activeTrip.passenger_name}</h4>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[9px] text-slate-400 block font-semibold">预计距离</span>
+                                <p class="text-xs font-black text-emerald-600 mt-0.5">${activeTrip.distance} km</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-2.5 rounded text-[10px] space-y-1.5 text-slate-500 border border-slate-150">
+                            <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span> <b>当前所在网格：</b><span>${activeTrip.pickup.name}</span></div>
+                            <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> <b>目标补能高功率桩：</b><span>${activeTrip.dropoff.name}</span></div>
+                        </div>
+
+                        <div class="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-1.5 h-[100px]">
+                            <div class="text-[9px] font-bold text-slate-400 flex items-center gap-1 border-b border-slate-100 pb-1">
+                                <i data-lucide="message-square" class="w-3.5 h-3.5 text-emerald-500"></i>
+                                补能系统小助手
+                            </div>
+                            <div id="chat-messages" class="flex-grow overflow-y-auto space-y-1 text-[10px] text-slate-600">
+                            </div>
+                        </div>
+
+                        <div id="d-status-flow-btn-container">
+                            ${flowButtonHtml}
+                        </div>
+                    </div>
+                `;
+            }
+            else if (status === 'charging_arrived') {
+                flowButtonHtml = `
+                    <div class="space-y-2 mt-2">
+                        <button onclick="startChargingAtStation()" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold py-2.5 rounded-xl transition shadow flex items-center justify-center gap-1.5 animate-pulse">
+                            <i data-lucide="zap" class="w-4 h-4 text-white animate-bounce"></i> 🔌 接入充电枪 (开始充能)
+                        </button>
+                        <button onclick="cancelChargingMission()" class="w-full bg-transparent hover:bg-slate-50 text-slate-400 py-1.5 rounded-lg text-xs transition text-center">
+                            放弃补能并开启听单
+                        </button>
+                    </div>
+                `;
+
+                dActiveTask.innerHTML = `
+                    <div class="bg-emerald-50/70 border border-emerald-200 rounded-xl p-4 flex flex-col gap-3">
+                        <div class="flex justify-between items-center border-b border-emerald-100 pb-2">
+                            <div>
+                                <span class="text-[8px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-bold uppercase">🏁 车辆已就位</span>
+                                <h4 class="text-xs font-bold text-slate-800 mt-1.5">${activeTrip.passenger_name}</h4>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[9px] text-slate-400 block font-semibold">当前电量</span>
+                                <p class="text-xs font-black text-rose-500 mt-0.5">${batteryLevel}%</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-2.5 rounded text-[10px] space-y-1.5 text-slate-500 border border-slate-150">
+                            <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> <b>当前所在充电站：</b><span>${activeTrip.dropoff.name}</span></div>
+                            <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> <b>充电枪状态：</b><span>电桩匹配成功（请手动插入电枪）</span></div>
+                        </div>
+
+                        <div class="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-1.5 h-[100px]">
+                            <div class="text-[9px] font-bold text-slate-400 flex items-center gap-1 border-b border-slate-100 pb-1">
+                                <i data-lucide="message-square" class="w-3.5 h-3.5 text-emerald-500"></i>
+                                补能系统小助手
+                            </div>
+                            <div id="chat-messages" class="flex-grow overflow-y-auto space-y-1 text-[10px] text-slate-600">
+                            </div>
+                        </div>
+
+                        <div id="d-status-flow-btn-container">
+                            ${flowButtonHtml}
+                        </div>
+                    </div>
+                `;
+            }
+            else if (status === 'charging_active') {
+                flowButtonHtml = `
+                    <div class="space-y-2 mt-2">
+                        <button onclick="completeChargingProcess()" class="w-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold py-2.5 rounded-xl transition shadow flex items-center justify-center gap-1.5">
+                            <i data-lucide="power" class="w-4 h-4"></i> 停止充电 / 拔枪启航
+                        </button>
+                    </div>
+                `;
+
+                dActiveTask.innerHTML = `
+                    <div class="bg-emerald-50/80 border-2 border-emerald-400 rounded-xl p-4 flex flex-col gap-3 shadow-md">
+                        <div class="text-center pb-2 border-b border-emerald-100">
+                            <div class="inline-flex items-center justify-center w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full mb-2 animate-bounce">
+                                <i data-lucide="zap" class="w-6 h-6 animate-pulse"></i>
+                            </div>
+                            <h4 class="text-sm font-black text-slate-800">大功率直流充电进行中</h4>
+                            <p class="text-[9px] text-slate-400 mt-1 font-mono">POWER: Super Charge</p>
+                        </div>
+
+                        <div class="bg-white p-3 rounded-xl border border-emerald-100 flex flex-col gap-2 shadow-inner">
+                            <div class="flex justify-between items-center text-xs">
+                                <span class="font-bold text-slate-700 flex items-center gap-1">
+                                    <i data-lucide="battery-charging" class="w-4 h-4 text-emerald-500 animate-pulse"></i>
+                                    实时 SOC 电量进度
+                                </span>
+                                <span id="live-charging-pct" class="font-black text-emerald-600 font-mono text-base">${batteryLevel}%</span>
+                            </div>
+                            <div class="w-full bg-slate-100 rounded-full h-3 border border-slate-200 overflow-hidden">
+                                <div id="live-charging-bar" class="bg-emerald-500 h-full rounded-full transition-all duration-300" style="width: ${batteryLevel}%"></div>
+                            </div>
+                            <p class="text-[9px] text-slate-400 italic text-center mt-1">💡 充至 100% 后将自动重开听单大厅</p>
+                        </div>
+
+                        <div id="d-status-flow-btn-container">
+                            ${flowButtonHtml}
+                        </div>
+                    </div>
+                `;
+            }
+            renderChatMessages(activeTrip.chat);
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+            return;
+        }
+
+        // --- 正常载客订单布局生成与对齐 ---
+        let btnContainerHtml = "";
+        const status = activeTrip.status;
+
+        if (status === 'accepted') {
+            btnContainerHtml = `
+                <button onclick="updateTripStatusByDriver('arrived')" class="w-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold py-2.5 rounded-xl transition shadow">
+                    我已抵达目的地/起点 (通知大脑)
+                </button>
+            `;
+        } else if (status === 'arrived') {
+            btnContainerHtml = `
+                <button onclick="updateTripStatusByDriver('driving')" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl transition shadow animate-pulse">
+                    乘员就位 (开始行车履约)
+                </button>
+            `;
+        } else if (status === 'driving') {
+            btnContainerHtml = `
+                <button onclick="updateTripStatusByDriver('completed')" class="w-full bg-gradient-to-r from-indigo-500 to-emerald-500 text-white font-bold py-2.5 rounded-xl transition shadow">
+                    已安全抵达目标热区 (核发调度特别补贴)
+                </button>
+            `;
+        } else if (status === 'completed' || status === 'cancelled') {
+            const dActiveTask = document.getElementById('d-active-task');
+            const dOrderPool = document.getElementById('d-order-pool');
+            if (dActiveTask) dActiveTask.classList.add('hidden');
+            if (dOrderPool) dOrderPool.classList.remove('hidden');
+
+            try {
+                map.removeLayer(pickupMarker);
+                map.removeLayer(dropoffMarker);
+                if (currentRoutePolyline) map.removeLayer(currentRoutePolyline);
+            } catch(e){}
+
+            if (status === 'completed') {
+                todayEarnings += activeTrip.price;
+                completedTripsCount++;
+                saveCompletedTripToOrders(activeTrip);
+                warpDriverToDestination(activeTrip.dropoff);
+            }
+            activeTrip = null;
+            refreshOrderPool();
+            return;
+        }
+
+        dActiveTask.innerHTML = `
+            <div class="bg-slate-50 border border-amber-500/20 rounded-xl p-4 flex flex-col gap-3">
+                <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+                    <div>
+                        <span class="text-[8px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-bold">时空调度令响应车辆</span>
+                        <h4 id="d-task-passenger" class="text-xs font-bold text-slate-800 mt-1.5">${activeTrip.passenger_name}</h4>
+                    </div>
+                    <div class="text-right">
+                        <span id="d-task-fare" class="text-sm font-black text-amber-500">¥${activeTrip.price.toFixed(1)}</span>
+                        <p id="d-task-distance" class="text-[8px] text-slate-400 mt-0.5">${activeTrip.distance} km</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-2.5 rounded text-[10px] space-y-1.5 text-slate-500 border border-slate-200 shadow-sm">
+                    <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span> <b>当前所在位置：</b><span id="d-task-pickup-name">${activeTrip.pickup.name}</span></div>
+                    <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> <b>调度指向网格：</b><span id="d-task-dropoff-name">${activeTrip.dropoff.name}</span></div>
+                </div>
+
+                <div class="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-1.5 h-[120px]">
+                    <div class="text-[9px] font-bold text-slate-400 flex items-center gap-1 border-b border-slate-100 pb-1">
+                        <i data-lucide="message-square" class="w-3.5 h-3.5 text-indigo-500"></i>
+                        调度指令下达确认
+                    </div>
+                    <div id="chat-messages" class="flex-grow overflow-y-auto space-y-1 text-[10px] text-slate-600">
+                    </div>
+                    <form onsubmit="sendChatMessage(event)" class="flex gap-1 border-t border-slate-100 pt-1.5">
+                        <input id="chat-input-text" type="text" placeholder="向调度中心确认响应状态..." class="flex-grow bg-slate-50 border border-slate-200 rounded px-2 py-0.5 text-[10px] text-slate-700 focus:outline-none focus:border-indigo-400">
+                        <button type="submit" class="bg-indigo-500 hover:bg-indigo-600 text-white px-2 rounded flex items-center justify-center">
+                            <i data-lucide="send" class="w-3 h-3 text-white"></i>
+                        </button>
+                    </form>
+                </div>
+
+                <div id="d-status-flow-btn-container" class="mt-1">
+                    ${btnContainerHtml}
+                </div>
+            </div>
+        `;
+
+        renderChatMessages(activeTrip.chat);
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    function saveCompletedTripToOrders(trip) {
+        const completedTripItem = {
+            id: trip.id,
+            passenger_name: trip.passenger_name,
+            pickup: trip.pickup,
+            dropoff: trip.dropoff,
+            price: trip.price,
+            distance: trip.distance,
+            duration: trip.duration,
+            timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+            status: "completed",
+            dispatch_details: `时空运力补给成功：Mamba-GNN 毫秒级供需撮合，空载车辆准时与高需求网格 [Grid ${trip.dropoff.grid_id}] 完成对齐调度。`
+        };
+
+        let localOrders = [];
+        try {
+            localOrders = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
+        } catch(e){}
+
+        localOrders.unshift(completedTripItem);
+        localStorage.setItem('mamba_completed_trips', JSON.stringify(localOrders));
+
+        // 履约结束后立即重新校对顶部 HUD，保持高度一致
+        syncHudStatsWithOrders();
+        writeLog("💾 运力补齐成功！时空调度对齐数据已存盘归档", "success");
+    }
+
+    function warpDriverToDestination(dropoffObj) {
+        driverPosition = { lng: dropoffObj.lng, lat: dropoffObj.lat };
+
+        if (driverMarker) {
+            driverMarker.setLatLng([driverPosition.lat, driverPosition.lng]);
+        }
+        if (map) {
+            map.panTo([driverPosition.lat, driverPosition.lng]);
+            map.setZoom(13);
+        }
+
+        const coordsDisplay = document.getElementById('gps-coords-display');
+        const gridDisplay = document.getElementById('gps-grid-display');
+        if (coordsDisplay) coordsDisplay.innerText = `${driverPosition.lng.toFixed(5)} °E, ${driverPosition.lat.toFixed(5)} °N`;
+
+        const gridId = getGridId(driverPosition.lng, driverPosition.lat);
+        if (gridDisplay) gridDisplay.innerText = `Grid ${gridId} (${dropoffObj.name})`;
+
+        // 刷新决策中心状态卡
+        const monitorStatus = document.getElementById('dispatch-monitor-status');
+        const monitorDesc = document.getElementById('dispatch-monitor-desc');
+        if (monitorStatus) {
+            monitorStatus.innerText = 'MISSION_ACCOMPLISHED';
+            monitorStatus.className = 'text-[9px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-mono font-bold';
+        }
+        if (monitorDesc) {
+            monitorDesc.innerText = "车辆已顺利抵达派车令规划的目标时空网格并安全补仓，全城负荷调优处于休眠常态化。";
+        }
+
+        writeLog(`🏁 时空引导成功！车辆已物理落客/交件于：[${dropoffObj.name}]。决策链路复位。`, "system");
+        showNotification("已抵达目标网格，履约完毕！", "success");
+
+        // 向全局日志库直接写入补仓完成状态
+        pushToDispatchLog(`🏁 【在途鲁A补仓成功】<b>${driverName}</b> 已安全抵达 <b>${dropoffObj.name}</b> 投放并完成运力交接，消融缺口！`, 'success');
+    }
+
+    function updateTripStatusByDriver(newStatus) {
+        if (!activeTrip) return;
+
+        activeTrip.status = newStatus;
+
+        if (newStatus === 'arrived') {
+            activeTrip.chat.push({ sender_id: "driver", sender_name: "师傅", text: "已到达预定调配交接点。车后尾箱储物空间已清理完毕。", timestamp: "刚刚" });
+            pushToDispatchLog(`📍 【在途鲁A位置】<b>${driverName}</b> 报告已抵达交接起点进行物资装载。`, 'system');
+        } else if (newStatus === 'driving') {
+            activeTrip.chat.push({ sender_id: "driver", sender_name: "师傅", text: "调度物资已装妥，车辆正沿着大脑计算出的最优行车阻抗线开拔。", timestamp: "刚刚" });
+            navigateRouteToCoord(activeTrip.dropoff.lng, activeTrip.dropoff.lat, "调度指向热区");
+            pushToDispatchLog(`🚚 【在途鲁A执行】<b>${driverName}</b> 引导包运输中，车速 55km/h，行车阻抗正常。`, 'info');
+        }
+
+        syncDriverTaskUI();
+        if (newStatus === 'completed') {
+            showNotification("行程履约圆满结算，已汇入账户");
+            writeLog(`🏁 调度令圆满结账！累计收到调度津贴 ¥${activeTrip.price.toFixed(2)}。`, "success");
+        }
+    }
+
+    // 💡 仿真模拟驶入系统（同时支持常规履约和补能行程）
+    function simulateDriverJourney() {
+        if (!activeTrip) return;
+        const target = activeTrip.status === 'driving' ? activeTrip.dropoff :
+                      (activeTrip.isChargingTask ? activeTrip.dropoff : activeTrip.pickup);
+
+        showNotification("正在沿着最优路径规划「高精模拟行驶」中...", "info");
+
+        let steps = 0;
+        const maxSteps = 10;
+        const startLng = driverPosition.lng;
+        const startLat = driverPosition.lat;
+
+        const interval = setInterval(() => {
+            steps++;
+            const ratio = steps / maxSteps;
+            const nextLng = startLng + (target.lng - startLng) * ratio;
+            const nextLat = startLat + (target.lat - startLat) * ratio;
+
+            if (batteryLevel > 1 && steps % 3 === 0 && !activeTrip.isChargingTask) {
+                batteryLevel--;
+                updateBatteryUI();
+            }
+
+            updateDriverGPSPosition(nextLng, nextLat, 55, 6, "模拟驾驶导航");
+
+            if (steps >= maxSteps) {
+                clearInterval(interval);
+                showNotification("模拟行驶结束，顺利抵达目的停靠点", "success");
+
+                // 💡 充能履约特殊校验：到达充电站后，将状态置为 `charging_arrived`，使“接入充电枪 (开始充能)”按钮被解禁可见。
+                if (activeTrip && activeTrip.isChargingTask && activeTrip.status === 'charging_navigating') {
+                    writeLog(`🏁 车辆已顺利抵达 [${activeTrip.dropoff.name}] 充电站。现在可以接入充电枪开始补能。`, "system");
+                    activeTrip.status = 'charging_arrived';
+                    activeTrip.chat.push({ sender_id: "passenger", sender_name: "系统小助手", text: "已顺利安全驶入充电车位！现在您可以接入充电电枪开始大功率补能了。", timestamp: "刚刚" });
+                    syncDriverTaskUI();
+                }
+            }
+        }, 800);
+    }
+
+    function handleMapClick(lng, lat) {
+        if (activeTrip && (activeTrip.status === 'accepted' || activeTrip.status === 'arrived' || activeTrip.status === 'driving')) {
+            showNotification("时空调配令执行中，请通过地图微调进行直接模拟巡游", "error");
+            return;
+        }
+
+        updateDriverGPSPosition(lng, lat, 0, 5, "车主手动微调");
+    }
+
+    // 地名地标快速定位
+    function zoomToLandmark(lng, lat, name) {
+        const lLng = parseFloat(lng);
+        const lLat = parseFloat(lat);
+        if (map) {
+            map.setView([lLat, lLng], 13);
+        }
+        if (isDriverOnline) {
+            updateDriverGPSPosition(lLng, lLat, 0, 6, "空载巡游定位");
+            showNotification(`已巡游至地标: ${name}`);
+        } else {
+            showNotification("请先开启雷达通道后再进行巡航定位");
+        }
+    }
+
+    function renderChatMessages(chatArr) {
+        const container = document.getElementById('chat-messages');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (!chatArr || chatArr.length === 0) {
+            container.innerHTML = `<div class="text-slate-400 italic text-center py-2 text-[9px]">安全驾驶第一，行车中请勿频繁打字。</div>`;
+            return;
+        }
+
+        chatArr.forEach(msg => {
+            const item = document.createElement('div');
+            const isMe = msg.sender_id === 'driver';
+            item.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'}`;
+            item.innerHTML = `
+                <div class="p-1.5 rounded-xl max-w-[85%] leading-relaxed text-[10px] shadow-sm ${isMe ? 'bg-indigo-600 text-white rounded-tr-none font-medium' : 'bg-slate-200 text-slate-800 rounded-tl-none border border-slate-300/45'}">
+                    ${msg.text}
+                </div>
+                <span class="text-[8px] text-slate-400 mt-0.5">${msg.sender_name} · ${msg.timestamp}</span>
+            `;
+            container.appendChild(item);
+        });
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function sendChatMessage(event) {
+        event.preventDefault();
+        const input = document.getElementById('chat-input-text');
+        if (!input || !input.value.trim() || !activeTrip) return;
+
+        activeTrip.chat.push({
+            sender_id: 'driver',
+            sender_name: '师傅',
+            text: input.value,
+            timestamp: "刚刚"
+        });
+
+        input.value = '';
+        syncDriverTaskUI();
+    }
+
+    const JINAN_ROADS = [
+        "省博物馆周边网格时空需求指数上升 35%，推荐空载鲁A车主前往就近听单。",
+        "经十东路预测流量平稳，预计平均通勤时间约 18 分钟，行驶无阻碍。",
+        "趵突泉附近因突发突增客流，模型预判未来 10 分钟将产生 60 辆车的供需缺口。",
+        "遥墙国际机场高速收费口路段行驶顺畅，推荐作为长途大单听单巡游区。"
+    ];
+
+    setInterval(() => {
+        if (isDriverOnline) {
+            const text = JINAN_ROADS[Math.floor(Math.random() * JINAN_ROADS.length)];
+            const broadcastEl = document.getElementById('broadcast-text');
+            if (broadcastEl) broadcastEl.innerText = `时空播报：${text}`;
+            writeLog(`📻 决策大脑提醒: ${text}`, 'system');
+        }
+    }, 13000);
+
+    // 在亮色系日志输出里采用高对比度的精美亮色颜色
+    function writeLog(text, type = 'info') {
+        const logsContainer = document.getElementById('system-logs');
+        if (!logsContainer) return;
+
+        const div = document.createElement('div');
+        const timeStr = new Date().toLocaleTimeString([], { hour12: false });
+        div.className = "flex items-start gap-1";
+
+        let colorClass = "text-slate-600";
+        if (type === 'success') colorClass = "text-emerald-600 font-bold";
+        if (type === 'error') colorClass = "text-rose-600 font-semibold";
+        if (type === 'system') colorClass = "text-violet-600 font-bold";
+
+        div.innerHTML = `<span class="text-slate-400 font-bold">[${timeStr}]</span> <span class="${colorClass}">${text}</span>`;
+        logsContainer.insertBefore(div, logsContainer.firstChild);
+    }
+
+    // 提示通知样式转入亮色柔和毛玻璃风格，视觉更和谐
+    function showNotification(msg, type = 'success') {
+        const el = document.createElement('div');
+        el.className = "fixed top-24 left-1/2 transform -translate-x-1/2 z-[2000] flex items-center gap-2 px-5 py-2.5 rounded-full shadow-2xl bg-white/95 border border-amber-300 text-xs font-semibold animate-bounce text-amber-700";
+        el.innerHTML = `<i data-lucide="sparkles" class="w-4 h-4 text-amber-500 animate-spin-slow"></i> <span>${msg}</span>`;
+        document.body.appendChild(el);
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+        setTimeout(() => el.remove(), 3500);
+    }
+</script>
+{% endblock %}

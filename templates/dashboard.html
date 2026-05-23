@@ -14,137 +14,221 @@
     .flip-card.flipped .flip-front { pointer-events: none; z-index: 1; }
     .flip-card.flipped .flip-back { pointer-events: auto; z-index: 2; }
 
-    .leaflet-container { z-index: 1 !important; }
+    .leaflet-container { z-index: 1 !important; border-radius: 0.75rem; }
     .leaflet-container :focus { outline: none !important; }
     path.leaflet-interactive:focus { outline: none !important; }
     .leaflet-marker-icon:focus { outline: none !important; }
     .cursor-pointer-marker { cursor: pointer !important; }
 
+    /* 底图灰度化与柔化，保持科技感 UI 风格 */
+    .leaflet-tile-pane { filter: grayscale(100%) opacity(0.85); }
+
     .hotspot-scroll-container { height: 350px; overflow-y: auto; padding-right: 8px; }
+    .hotspot-scroll-container::-webkit-scrollbar { width: 4px; }
+    .hotspot-scroll-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
     .cyber-tooltip { background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(0, 0, 0, 0.1); color: #333; border-radius: 0.5rem; box-shadow: 0 4px 10px rgba(0,0,0,0.1); padding: 8px; border-left: 4px solid #3b82f6; }
-    .img-display-area { flex: 1; display: flex; align-items: center; justify-content: center; background: #f8fafc; border-radius: 0.75rem; padding: 10px; overflow: hidden; }
-    .img-display-area img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+    .img-display-area { flex: 1; display: flex; align-items: center; justify-content: center; background: #f8fafc; border-radius: 0.75rem; padding: 10px; overflow: hidden; border: 1px solid #f1f5f9; }
+    .img-display-area img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 0.5rem; }
 
     .analysis-box { margin-top: 12px; padding: 12px; border-radius: 0.75rem; font-size: 0.85rem; line-height: 1.5; }
     .warning-box { background: rgba(239, 68, 68, 0.05); border-left: 4px solid #ef4444; color: #b91c1c; }
     .info-box { background: rgba(59, 130, 246, 0.05); border-left: 4px solid #3b82f6; color: #1d4ed8; }
 </style>
 
-<div class="space-y-6 pb-12">
-    <div class="mb-6 border-b border-gray-200 pb-4">
-        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-600 text-xs font-mono mb-3">
-            <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-            SYSTEM OFFLINE DASHBOARD
+<div class="space-y-8 pb-16">
+    <!-- 头部说明与数据集热切换 -->
+    <div class="mb-6 border-b border-gray-200 pb-5 flex flex-col xl:flex-row justify-between items-start xl:items-end gap-6">
+        <div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-600 text-xs font-mono mb-4">
+                <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                SYSTEM OFFLINE DASHBOARD
+            </div>
+            <h3 class="text-3xl font-bold text-gray-800 tech-font mb-3">济南市网约车需求预测离线综合看板 <br/></h3>
+            <p class="text-gray-500 text-sm max-w-4xl">
+                全方位呈现当前数据集下，Mamba-GNN 及其基线模型在离线环境中的全系对比、消融评估、性能开销以及空间分布诊断与图谱。
+            </p>
         </div>
-        <h3 class="text-3xl font-bold text-gray-800 tech-font mb-2">济南市网约车需求预测离线看板</h3>
-        <p class="text-gray-500 text-sm">
-            全方位呈现 Mamba-GNN 模型在济南市历史数据集上的预测性能、时序拟合曲线以及空间热点分布情况。实时监控请切换至“实时预测”页。
-        </p>
+
+        <!-- 针对离线看板的独立长短周期切换器 -->
+        <div class="shrink-0 bg-white p-3 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4 transition hover:shadow-md">
+            <div class="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center">
+                <i data-lucide="database" class="w-4 h-4 mr-1.5 text-blue-500"></i> 数据集 (Dataset)
+            </div>
+            <div class="h-6 w-px bg-gray-200"></div>
+            <select id="board-dataset-switcher" class="bg-gray-50 border border-gray-300 text-blue-600 text-sm font-bold rounded-xl focus:ring-blue-500 focus:border-blue-500 block px-4 py-2 cursor-pointer outline-none hover:bg-gray-100 transition-colors">
+                <option value="results2" selected>长周期预测 / Long-Term</option>
+                <option value="results">短周期预测 / Short-Term</option>
+            </select>
+        </div>
     </div>
 
-    <!-- 顶部数据概览 -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div class="glass-panel p-6 border-t-4 border-blue-500 flex flex-col items-center justify-center bg-white">
-            <p class="text-sm text-gray-500 mb-2 font-medium">离线平均绝对误差 (MAE)</p>
-            <h2 class="text-4xl font-bold text-blue-600 font-mono" id="mae">--</h2>
+    <!-- 顶部数据概览 (Mamba-GNN 核心指标) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="glass-panel p-6 border-t-4 border-blue-500 flex flex-col items-center justify-center bg-white shadow-sm hover:-translate-y-1 hover:shadow-md transition-all rounded-2xl">
+            <p class="text-xs text-gray-500 mb-2 font-bold uppercase tracking-widest flex items-center"><i data-lucide="target" class="w-4 h-4 mr-1 opacity-70"></i> 核心绝对误差 (MAE)</p>
+            <h2 class="text-5xl font-bold text-blue-600 font-mono tracking-tight" id="mae">--</h2>
         </div>
-        <div class="glass-panel p-6 border-t-4 border-purple-500 flex flex-col items-center justify-center bg-white">
-            <p class="text-sm text-gray-500 mb-2 font-medium">离线决定系数 (R²)</p>
-            <h2 class="text-4xl font-bold text-purple-600 font-mono" id="r2">--</h2>
+        <div class="glass-panel p-6 border-t-4 border-purple-500 flex flex-col items-center justify-center bg-white shadow-sm hover:-translate-y-1 hover:shadow-md transition-all rounded-2xl">
+            <p class="text-xs text-gray-500 mb-2 font-bold uppercase tracking-widest flex items-center"><i data-lucide="award" class="w-4 h-4 mr-1 opacity-70"></i> 全局决定系数 (R²)</p>
+            <h2 class="text-5xl font-bold text-purple-600 font-mono tracking-tight" id="r2">--</h2>
         </div>
-        <div class="glass-panel p-6 border-t-4 border-emerald-500 flex flex-col items-center justify-center bg-white">
-            <p class="text-sm text-gray-500 mb-2 font-medium">全局预测稳定性</p>
-            <h2 class="text-4xl font-bold text-emerald-600 font-mono">极佳</h2>
+        <div class="glass-panel p-6 border-t-4 border-emerald-500 flex flex-col items-center justify-center bg-white shadow-sm hover:-translate-y-1 hover:shadow-md transition-all rounded-2xl">
+            <p class="text-xs text-gray-500 mb-2 font-bold uppercase tracking-widest flex items-center"><i data-lucide="shield-check" class="w-4 h-4 mr-1 opacity-70"></i> 全局预测稳定性</p>
+            <h2 class="text-5xl font-bold text-emerald-500 font-mono tracking-widest">极佳</h2>
+        </div>
+    </div>
+
+    <!-- 全系模型离线综合对比评估 (Contrast & Ablation Offline Metrics) -->
+    <div class="mb-8">
+        <h3 class="text-2xl font-bold mb-6 text-gray-800 flex items-center tracking-wide">
+            <i data-lucide="layers" class="w-6 h-6 mr-3 text-indigo-500"></i>
+            全系模型离线综合对比与消融评估 <span class="text-lg text-gray-500 ml-2 font-normal">(Contrast & Ablation Metrics)</span>
+        </h3>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6 items-stretch">
+
+            <!-- 性价比气泡图 (Bubble Chart) - 更新为所有融合模型对比 -->
+            <div class="glass-panel p-6 xl:col-span-1 bg-white shadow-sm rounded-3xl border border-gray-100 flex flex-col hover:shadow-md transition-all">
+                <h4 class="text-base font-bold text-gray-700 mb-4 flex items-center"><i data-lucide="cpu" class="w-5 h-5 mr-2 text-blue-500"></i> 融合模型算力与精度图表</h4>
+                <div class="text-[10px] text-gray-400 font-mono text-right mb-2 bg-gray-50 px-2 py-1 rounded inline-block w-max self-end">Bubble Size = VRAM/Params</div>
+                <div class="relative w-full flex-grow min-h-[280px]"><canvas id="bubbleChart"></canvas></div>
+            </div>
+
+            <!-- 详细评估报表 (Table) -->
+            <div class="glass-panel p-6 xl:col-span-2 bg-white shadow-sm rounded-3xl border border-gray-100 flex flex-col overflow-hidden hover:shadow-md transition-all">
+                <h4 class="text-base font-bold text-gray-700 mb-4 flex items-center"><i data-lucide="layout-grid" class="w-5 h-5 mr-2 text-blue-500"></i> 详细评估数据报表 (Metrics Table)</h4>
+                <div class="overflow-x-auto flex-grow rounded-xl border border-gray-100 bg-gray-50/50">
+                    <table class="w-full text-sm text-left whitespace-nowrap">
+                        <thead class="text-[11px] text-gray-500 uppercase bg-white border-b border-gray-100 tracking-wider">
+                        <tr>
+                            <th class="px-5 py-4 font-semibold rounded-tl-lg">模型 (MODEL)</th>
+                            <th class="px-5 py-4 text-right font-semibold">MSE</th>
+                            <th class="px-5 py-4 text-right font-semibold">RMSE</th>
+                            <th class="px-5 py-4 text-right font-semibold">MAE</th>
+                            <th class="px-5 py-4 text-right font-semibold">MAPE(%)</th>
+                            <th class="px-5 py-4 text-right font-semibold">R² 得分</th>
+                            <th class="px-5 py-4 text-right font-semibold">参数量</th>
+                            <th class="px-5 py-4 text-right font-semibold rounded-tr-lg">耗时(S)</th>
+                        </tr>
+                        </thead>
+                        <tbody id="metricsTableBody" class="divide-y divide-gray-100 text-gray-700 bg-white"></tbody>
+                    </table>
+                </div>
+            </div>
+
         </div>
     </div>
 
     <!-- 中部：时序与热点 -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div class="lg:col-span-2 h-[480px] flip-container">
             <div class="flip-card" id="card1">
-                <div class="flip-front glass-panel p-6 bg-white">
+                <div class="flip-front glass-panel p-8 bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
                     <div class="flex justify-between items-center mb-6">
-                        <h3 class="text-lg font-bold text-gray-800 flex items-center"><i data-lucide="line-chart" class="w-5 h-5 mr-2 text-blue-500"></i> 济南市需求拟合曲线</h3>
-                        <button class="text-xs bg-gray-50 text-blue-600 px-4 py-1.5 rounded-full border border-gray-200 hover:bg-gray-100" onclick="document.getElementById('card1').classList.toggle('flipped')">查看 Loss 趋势</button>
+                        <h3 class="text-xl font-bold text-gray-800 flex items-center"><i data-lucide="line-chart" class="w-6 h-6 mr-2 text-blue-500"></i> Mamba-GNN 离线需求拟合曲线</h3>
+                        <button class="text-xs font-bold uppercase tracking-wide bg-blue-50 text-blue-600 px-5 py-2 rounded-full border border-blue-100 hover:bg-blue-100 transition shadow-sm" onclick="document.getElementById('card1').classList.toggle('flipped')">查看 Loss 趋势 (Loss Curve)</button>
                     </div>
-                    <div class="flex-1 relative w-full h-full"><canvas id="lineChart"></canvas></div>
+                    <div class="flex-1 relative w-full h-[350px]"><canvas id="lineChart"></canvas></div>
                 </div>
-                <div class="flip-back glass-panel p-6 bg-white">
+                <div class="flip-back glass-panel p-8 bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
                     <div class="flex justify-between items-center mb-6">
-                        <h3 class="text-lg font-bold text-gray-800 flex items-center"><i data-lucide="activity" class="w-5 h-5 mr-2 text-orange-500"></i> 训练 Loss 收敛细节</h3>
-                        <button class="text-xs bg-gray-50 text-orange-600 px-4 py-1.5 rounded-full border border-gray-200 hover:bg-gray-100" onclick="document.getElementById('card1').classList.toggle('flipped')">返回预测曲线</button>
+                        <h3 class="text-xl font-bold text-gray-800 flex items-center"><i data-lucide="activity" class="w-6 h-6 mr-2 text-orange-500"></i> Mamba-GNN 训练收敛细节</h3>
+                        <button class="text-xs font-bold uppercase tracking-wide bg-orange-50 text-orange-600 px-5 py-2 rounded-full border border-orange-100 hover:bg-orange-100 transition shadow-sm" onclick="document.getElementById('card1').classList.toggle('flipped')">返回预测曲线 (Prediction Curve)</button>
                     </div>
-                    <div class="flex-1 relative w-full h-full"><canvas id="lossChart"></canvas></div>
+                    <div class="flex-1 relative w-full h-[350px]"><canvas id="lossChart"></canvas></div>
                 </div>
             </div>
         </div>
 
-        <div class="lg:col-span-1 h-[480px] glass-panel p-6 flex flex-col border-t-4 lg:border-t-0 lg:border-l-4 border-red-500 bg-white">
+        <div class="lg:col-span-1 h-[480px] glass-panel p-8 flex flex-col border-t-4 border-red-500 bg-white rounded-3xl shadow-sm border border-gray-100 hover:shadow-md transition-all">
             <h3 class="text-xl font-bold mb-6 text-gray-800 flex items-center"><i data-lucide="flame" class="w-6 h-6 mr-2 text-red-500 animate-pulse"></i> Top 5 热门预测区域</h3>
             <div class="hotspot-scroll-container pr-2" id="hotspot-list"></div>
-            <div class="mt-auto pt-4 border-t border-gray-100">
-                <p class="text-xs text-gray-400 font-mono tracking-widest uppercase mb-1">Total Predicted Flow</p>
-                <span id="total-vol" class="text-red-500 font-mono text-4xl font-bold">0</span>
+            <div class="mt-auto pt-5 border-t border-gray-100 bg-gray-50 -mx-8 -mb-8 px-8 pb-8 rounded-b-3xl">
+                <p class="text-[11px] text-gray-500 font-mono tracking-widest uppercase mb-1 mt-4">Total Predicted Flow</p>
+                <span id="total-vol" class="text-red-500 font-mono text-4xl font-bold tracking-tight">0</span>
             </div>
         </div>
     </div>
 
     <!-- 底部：地图 -->
-    <div class="glass-panel p-6 border-t-4 border-blue-500 flex flex-col relative z-0 bg-white">
+    <div class="glass-panel p-8 border-t-4 border-blue-500 flex flex-col relative z-0 bg-white rounded-3xl shadow-sm border border-gray-100 mb-8 hover:shadow-md transition-all">
         <div class="flex justify-between items-center mb-6">
             <h3 class="text-xl font-bold text-gray-800 flex items-center">
-                <i data-lucide="map" class="w-6 h-6 mr-2 text-blue-500"></i> 空间预测热点地理分布
+                <i data-lucide="map" class="w-6 h-6 mr-2 text-blue-500"></i> 空间预测热点地理分布 (Geospatial Distribution)
             </h3>
         </div>
-        <div id="heatmap-container" class="w-full rounded-lg border border-gray-200 bg-gray-50 relative z-0" style="height: 500px;"></div>
+        <div id="heatmap-container" class="w-full rounded-2xl border border-gray-200 bg-gray-50 relative z-0" style="height: 500px;"></div>
     </div>
 
-    <!-- 深度分析区 -->
-    <div id="advanced-diagnostics" class="h-[780px] flip-container mt-6">
-        <div class="flip-card" id="card2">
-            <div class="flip-front glass-panel p-8 border-t-4 border-pink-500 bg-white">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-xl font-bold text-gray-800 flex items-center">
-                        <i data-lucide="image" class="w-6 h-6 mr-2 text-pink-500"></i> 空间误差分布 (Mamba-GNN)
-                    </h3>
-                    <button class="text-sm bg-gray-50 text-pink-600 px-5 py-2 rounded-full border border-gray-200 hover:bg-gray-100" onclick="document.getElementById('card2').classList.toggle('flipped')">
-                        查看训练指标分析
-                    </button>
-                </div>
-                <div class="img-display-area">
-                    <img src="/results/spatial_error_map_Mamba-GNN.png" alt="空间误差分布图">
-                </div>
-                <div class="analysis-box warning-box">
-                    <div class="flex items-center gap-2 mb-1">
-                        <i data-lucide="alert-triangle" class="w-4 h-4 text-red-600"></i>
-                        <strong class="text-red-700">调度员核心提醒：</strong>
-                    </div>
-                    请重点关注 <strong>趵突泉/市中心 (网格82)</strong> 及 <strong>山东省博物馆/CBD区域 (网格83)</strong>。上述区域属于“超高流量+高波动”地段，受天气、突发事件和复杂路网的影响极大。在参考系统预测数据时，请务必在这两个核心区域<strong>预留更多的弹性运力</strong>，以应对瞬时爆发性需求。
-                </div>
-            </div>
+    <!-- 图谱展示画廊区：综合消融实验与对比实验图谱 -->
+    <div class="mb-4 flex items-center gap-4 pt-8">
+        <h3 class="text-2xl font-bold text-gray-800 tracking-wider flex items-center shrink-0">
+            <i data-lucide="images" class="w-7 h-7 mr-3 text-indigo-500"></i>
+            离线图谱评估报告 <span class="text-lg text-gray-500 ml-2 font-normal">(Offline Visual Evaluation Reports)</span>
+        </h3>
+        <div class="h-px bg-gradient-to-r from-gray-200 to-transparent flex-grow"></div>
+    </div>
 
-            <div class="flip-back glass-panel p-8 border-t-4 border-indigo-500 bg-white">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-xl font-bold text-gray-800 flex items-center">
-                        <i data-lucide="git-merge" class="w-6 h-6 mr-2 text-indigo-500"></i> Mamba-GNN 训练指标全系曲线
-                    </h3>
-                    <button class="text-sm bg-gray-50 text-indigo-600 px-5 py-2 rounded-full border border-gray-200 hover:bg-gray-100" onclick="document.getElementById('card2').classList.toggle('flipped')">
-                        返回空间误差
-                    </button>
-                </div>
-                <div class="img-display-area">
-                    <img src="/results/Mamba-GNN_all_metrics_curves.png" alt="训练指标变化曲线">
-                </div>
-                <div class="analysis-box info-box">
-                    <div class="flex items-center gap-2 mb-1">
-                        <i data-lucide="info" class="w-4 h-4 text-blue-600"></i>
-                        <strong class="text-blue-700">训练效能简析：</strong>
-                    </div>
-                    指标变化曲线显示，模型在前15个Epoch内实现了预测性能的快速飞跃，准确率 (Accuracy) 最终稳定在 <strong>90%</strong> 附近，MAE 显著下降并稳定在 <strong>2.0</strong> 以下。Mamba 架构在长时序记忆上的优势使得 R² 指标展现出极强的鲁棒性，无明显过拟合迹象。
-                </div>
+    <!-- 第一排图谱 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- 融合模型预测对比 -->
+        <div class="glass-panel p-6 bg-white shadow-sm rounded-3xl border border-gray-100 flex flex-col hover:shadow-md transition-all h-[400px]">
+            <h4 class="text-sm font-bold text-gray-700 mb-3 flex items-center uppercase tracking-wide"><i data-lucide="git-compare" class="w-4 h-4 mr-2 text-blue-500"></i> 总需求量预测对比 (Demand Comparison)</h4>
+            <div class="img-display-area shadow-inner">
+                <img id="img-demand" src="" alt="总需求量预测对比">
+            </div>
+        </div>
+        <!-- 拟合优度散点 -->
+        <div class="glass-panel p-6 bg-white shadow-sm rounded-3xl border border-gray-100 flex flex-col hover:shadow-md transition-all h-[400px]">
+            <h4 class="text-sm font-bold text-gray-700 mb-3 flex items-center uppercase tracking-wide"><i data-lucide="crosshair" class="w-4 h-4 mr-2 text-emerald-500"></i> 拟合优度散点阵列 (Goodness of Fit)</h4>
+            <div class="img-display-area shadow-inner">
+                <img id="img-fit" src="" alt="拟合优度散点阵列">
             </div>
         </div>
     </div>
+
+    <!-- 第二排图谱 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- 误差概率分布 -->
+        <div class="glass-panel p-6 bg-white shadow-sm rounded-3xl border border-gray-100 flex flex-col hover:shadow-md transition-all h-[400px]">
+            <h4 class="text-sm font-bold text-gray-700 mb-3 flex items-center uppercase tracking-wide"><i data-lucide="bar-chart-3" class="w-4 h-4 mr-2 text-purple-500"></i> 误差概率密度分布 (Error Distribution)</h4>
+            <div class="img-display-area shadow-inner">
+                <img id="img-dist" src="" alt="误差概率密度分布">
+            </div>
+        </div>
+        <!-- Mamba 空间误差分布图 -->
+        <div class="glass-panel p-6 bg-white shadow-sm rounded-3xl border border-gray-100 flex flex-col hover:shadow-md transition-all h-[400px]">
+            <h4 class="text-sm font-bold text-gray-700 mb-3 flex items-center uppercase tracking-wide"><i data-lucide="map" class="w-4 h-4 mr-2 text-pink-500"></i> 空间误差分布图 (Spatial Error Map)</h4>
+            <div class="img-display-area shadow-inner relative">
+                <img id="img-spatial" src="" alt="空间误差分布图">
+            </div>
+        </div>
+    </div>
+
+    <!-- 第三排：动态指标曲线选择器 -->
+    <div class="glass-panel p-6 lg:p-8 bg-white shadow-sm rounded-3xl border border-gray-100 flex flex-col hover:shadow-md transition-all">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+            <h4 class="text-base font-bold text-gray-800 tracking-wide flex items-center">
+                <i data-lucide="trending-up" class="w-5 h-5 mr-2 text-orange-500"></i> 各模型训练指标变化曲线 (All Metrics Curves)
+            </h4>
+            <select id="metrics-model-selector" class="bg-gray-50 border border-gray-200 text-gray-700 text-sm font-bold rounded-xl focus:ring-blue-500 focus:border-blue-500 block px-4 py-2 outline-none cursor-pointer hover:bg-gray-100">
+                <option value="Mamba-GNN">Mamba-GNN</option>
+                <option value="Mamba-Only">Mamba-Only</option>
+                <option value="GNN-Only">GNN-Only</option>
+                <option value="Transformer-GNN">Transformer-GNN</option>
+                <option value="LSTM-GNN">LSTM-GNN</option>
+                <option value="GRU-GNN">GRU-GNN</option>
+                <option value="Transformer-Only">Transformer-Only</option>
+                <option value="LSTM-Only">LSTM-Only</option>
+                <option value="GRU-Only">GRU-Only</option>
+            </select>
+        </div>
+        <div class="img-display-area shadow-inner min-h-[400px] h-[500px]">
+            <img id="img-metrics" src="" alt="模型训练指标曲线">
+        </div>
+    </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -168,19 +252,136 @@
         84: { cn: "济南首创奥特莱斯", lat: 36.692267, lon: 117.232234, url: "https://baike.baidu.com/item/%E9%A6%96%E5%88%9B%E5%A5%A5%E7%89%B9%E8%8E%B1%E6%96%AF/61224771" }
     };
 
+    let bubbleChartInstance = null;
+    let lineChartInstance = null;
+    let lossChartInstance = null;
+
+    function parseNum(v) {
+        return typeof v === 'string' ? parseFloat(v.split('±')[0]) : (v || 0);
+    }
+
+    // 图片路径智能适配器 (png优先，失败则尝试jpg)
+    function setImgSrc(imgId, basePath, filenameNoExt) {
+        const img = document.getElementById(imgId);
+        if(!img) return;
+
+        img.src = `${basePath}/${filenameNoExt}.png`;
+        img.onerror = function() {
+            if(this.src.endsWith('.png')) {
+                this.src = `${basePath}/${filenameNoExt}.jpg`;
+            } else {
+                this.onerror = null; // 防止死循环
+            }
+        };
+    }
+
+    // 更新所有静态图谱
+    function updateGalleryImages(datasetStr) {
+        const basePath = `/${datasetStr}`;
+        setImgSrc('img-demand', basePath, 'Fusion_Comparison_total_demand_comparison');
+        setImgSrc('img-fit', basePath, 'Fusion_Comparison_goodness_of_fit');
+        setImgSrc('img-dist', basePath, 'Fusion_Comparison_error_distribution');
+        setImgSrc('img-spatial', basePath, 'spatial_error_map_Mamba-GNN');
+
+        // 更新指标曲线
+        const selectedModel = document.getElementById('metrics-model-selector').value;
+        setImgSrc('img-metrics', basePath, `${selectedModel}_all_metrics_curves`);
+    }
+
     function renderDashboard(data) {
         if (!data) return;
 
-        if (!isAdvanced) {
-            const advZone = document.getElementById('advanced-diagnostics');
-            if (advZone) advZone.style.display = 'none';
-        }
-
         const mambaMetrics = data.evaluation_groups?.Fusion_Comparison?.['Mamba-GNN'] || {};
-        const parseNum = v => typeof v === 'string' ? parseFloat(v.split('±')[0]) : (v || 0);
-
         document.getElementById('mae').textContent = parseNum(mambaMetrics.mae).toFixed(2);
         document.getElementById('r2').textContent = (parseNum(mambaMetrics.r2) * 100).toFixed(2) + '%';
+
+        // 渲染气泡图 (性价比监控)
+        const bubbleCtx = document.getElementById('bubbleChart');
+        if (bubbleCtx) {
+            if(bubbleChartInstance) bubbleChartInstance.destroy();
+
+            // 改为获取 Fusion_Comparison 融合模型的数据
+            const fusionData = data.evaluation_groups?.Fusion_Comparison;
+            if (fusionData) {
+                // 将展示模型切换为所有融合模型
+                const models = ["Mamba-GNN", "Transformer-GNN", "LSTM-GNN", "GRU-GNN"];
+                const bData = models.map((m) => {
+                    const time = parseNum(fusionData[m]?.avg_epoch_time_s);
+                    const rmse = parseNum(fusionData[m]?.rmse);
+                    const params = parseNum(fusionData[m]?.parameters);
+                    let rSize = Math.max(8, params / 4000); // 气泡大小缩放逻辑保持一致
+                    return { x: time, y: rmse, r: rSize, model: m };
+                });
+
+                // 配置四种不同的颜色以区分融合模型
+                const colors = [
+                    { bg: 'rgba(59, 130, 246, 0.6)', border: '#3b82f6' }, // 蓝色 (Mamba-GNN)
+                    { bg: 'rgba(239, 68, 68, 0.6)', border: '#ef4444' },  // 红色 (Transformer-GNN)
+                    { bg: 'rgba(168, 85, 247, 0.6)', border: '#a855f7' }, // 紫色 (LSTM-GNN)
+                    { bg: 'rgba(34, 197, 94, 0.6)', border: '#22c55e' }   // 绿色 (GRU-GNN)
+                ];
+
+                bubbleChartInstance = new Chart(bubbleCtx.getContext('2d'), {
+                    type: 'bubble',
+                    data: {
+                        datasets: models.map((m, idx) => ({
+                            label: m,
+                            data: [bData[idx]],
+                            backgroundColor: colors[idx].bg,
+                            borderColor: colors[idx].border,
+                            borderWidth: 2
+                        }))
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, font: {size: 11} } },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const d = context.raw;
+                                        return `${d.model}: 耗时 ${d.x.toFixed(2)}s | RMSE ${d.y.toFixed(2)} | Params ${(d.r*4000).toLocaleString()}`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { title: { display: true, text: '单轮耗时 (Epoch Time / s)', font: {size: 10} }, grid: { color: '#f1f5f9' }, ticks: {font: {size:10}} },
+                            y: { title: { display: true, text: '预测误差 (RMSE)', font: {size: 10} }, grid: { color: '#f1f5f9' }, ticks: {font: {size:10}} }
+                        }
+                    }
+                });
+            }
+        }
+
+        // 渲染综合表格
+        const tbody = document.getElementById('metricsTableBody');
+        if (tbody) {
+            tbody.innerHTML = '';
+            const targetModels = ['Mamba-GNN', 'Transformer-GNN', 'LSTM-GNN', 'GRU-GNN', 'Mamba-Only', 'Transformer-Only', 'LSTM-Only', 'GRU-Only'];
+            const combined = { ...(data.evaluation_groups?.Fusion_Comparison || {}), ...(data.evaluation_groups?.Single_Comparison || {}), ...(data.evaluation_groups?.Ablation_Study || {}) };
+
+            targetModels.forEach(m => {
+                if(combined[m]) {
+                    const tr = document.createElement('tr');
+                    tr.className = 'bg-white hover:bg-blue-50/30 transition-colors group';
+                    const color = m.includes('Mamba') ? '#3b82f6' : '#cbd5e1';
+                    tr.innerHTML = `
+                        <td class="px-5 py-4 font-medium flex items-center text-gray-700 border-l-[3px]" style="border-left-color: ${color}">
+                            <span class="w-2 h-2 rounded-full mr-2.5" style="background-color: ${color}"></span> ${m}
+                        </td>
+                        <td class="px-5 py-4 text-right font-mono text-gray-500 group-hover:text-gray-800">${parseNum(combined[m].mse).toFixed(2)}</td>
+                        <td class="px-5 py-4 text-right font-mono text-gray-500 group-hover:text-gray-800">${parseNum(combined[m].rmse).toFixed(2)}</td>
+                        <td class="px-5 py-4 text-right font-mono text-gray-500 group-hover:text-gray-800">${parseNum(combined[m].mae).toFixed(2)}</td>
+                        <td class="px-5 py-4 text-right font-mono text-gray-500 group-hover:text-gray-800">${parseNum(combined[m].mape).toFixed(2)}%</td>
+                        <td class="px-5 py-4 text-right font-mono font-bold" style="color: ${color}">${parseNum(combined[m].r2).toFixed(4)}</td>
+                        <td class="px-5 py-4 text-right font-mono text-gray-400 group-hover:text-gray-600">${parseNum(combined[m].parameters).toLocaleString()}</td>
+                        <td class="px-5 py-4 text-right font-mono text-gray-400 group-hover:text-gray-600">${parseNum(combined[m].avg_epoch_time_s).toFixed(2)}</td>
+                    `;
+                    tbody.appendChild(tr);
+                }
+            });
+        }
 
         const container = document.getElementById('hotspot-list');
         container.innerHTML = '';
@@ -190,12 +391,12 @@
             const spot = SCENIC_SPOTS_MAP[h.grid_id] || { cn: "未知网格区域", lat: null, lon: null };
 
             const div = document.createElement('div');
-            div.className = "p-3.5 mb-3 flex items-center gap-3 bg-white border border-gray-100 rounded-xl cursor-pointer hover:border-blue-300 hover:bg-gray-50 transition-all shadow-sm";
+            div.className = "p-4 mb-3 flex items-center gap-3 bg-white border border-gray-100 rounded-xl cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-all shadow-sm";
             div.innerHTML = `
-                <div class="w-10 h-10 flex items-center justify-center font-bold rounded-lg ${i < 3 ? 'bg-red-500 text-white shadow-sm' : 'bg-gray-100 text-gray-500'}">${h.rank}</div>
+                <div class="w-10 h-10 flex items-center justify-center font-bold rounded-xl ${i < 3 ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500'}">${h.rank}</div>
                 <div class="flex-grow min-w-0">
                     <h4 class="text-gray-800 font-bold text-sm truncate">${spot.cn}</h4>
-                    <p class="text-[10px] text-blue-500 mt-1 flex items-center"><i data-lucide="navigation" class="w-3 h-3 mr-1"></i>点击定位</p>
+                    <p class="text-[10px] text-blue-500 mt-1 flex items-center uppercase tracking-widest"><i data-lucide="navigation" class="w-3 h-3 mr-1"></i> 点击定位 (Locate)</p>
                 </div>
                 <div class="text-right pl-3 border-l border-gray-100"><span class="text-blue-600 font-mono font-bold text-xl">${h.predicted_volume.toLocaleString()}</span></div>
             `;
@@ -214,41 +415,53 @@
         lucide.createIcons();
 
         const ts = data.predictions_time_series || { ground_truth: [], prediction_mamba_gnn: [] };
-        new Chart(document.getElementById('lineChart').getContext('2d'), {
+        if(lineChartInstance) lineChartInstance.destroy();
+        lineChartInstance = new Chart(document.getElementById('lineChart').getContext('2d'), {
             type: 'line',
             data: {
                 labels: ts.ground_truth.map((_, i) => `T${i}`),
                 datasets: [
-                    { label: '模型预测值', data: ts.prediction_mamba_gnn, borderColor: '#3b82f6', tension: 0.4, fill: true, backgroundColor: 'rgba(59, 130, 246, 0.1)', pointRadius: 2 },
-                    { label: '真实记录值', data: ts.ground_truth, borderColor: '#94a3b8', borderDash: [5, 5], tension: 0.4, pointRadius: 0 }
+                    { label: '模型预测值 (Prediction)', data: ts.prediction_mamba_gnn, borderColor: '#3b82f6', tension: 0.4, fill: true, backgroundColor: 'rgba(59, 130, 246, 0.1)', pointRadius: 0, borderWidth: 2.5 },
+                    { label: '真实记录值 (Ground Truth)', data: ts.ground_truth, borderColor: '#94a3b8', borderDash: [5, 5], tension: 0.4, pointRadius: 0, borderWidth: 2 }
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { grid: { color: '#f1f5f9' } } } }
+            options: { responsive: true, maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, scales: { x: { grid: { display: false } }, y: { grid: { color: '#f1f5f9' } } } }
         });
 
         const loss = data.loss_history?.['Mamba-GNN'] || { train: [], val: [] };
-        new Chart(document.getElementById('lossChart').getContext('2d'), {
+        if(lossChartInstance) lossChartInstance.destroy();
+        lossChartInstance = new Chart(document.getElementById('lossChart').getContext('2d'), {
             type: 'line',
             data: {
                 labels: loss.train.map((_, i) => i + 1),
                 datasets: [
-                    { label: '训练损失 (Train)', data: loss.train, borderColor: '#f97316', tension: 0.4, pointRadius: 0 },
-                    { label: '验证损失 (Val)', data: loss.val, borderColor: '#eab308', tension: 0.4, borderDash: [5, 5], pointRadius: 0 }
+                    { label: '训练损失 (Train Loss)', data: loss.train, borderColor: '#f97316', tension: 0.4, pointRadius: 0, borderWidth: 2.5 },
+                    { label: '验证损失 (Val Loss)', data: loss.val, borderColor: '#eab308', tension: 0.4, borderDash: [5, 5], pointRadius: 0, borderWidth: 2 }
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { grid: { color: '#f1f5f9' } } } }
+            options: { responsive: true, maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, scales: { x: { grid: { display: false } }, y: { grid: { color: '#f1f5f9' } } } }
         });
 
         if (!window.myMap) {
             window.myMap = L.map('heatmap-container', { zoomControl: false }).setView([36.66, 117.02], 11);
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(window.myMap);
+            L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+                attribution: '&copy; 高德地图 (Amap)',
+                subdomains: ['1', '2', '3', '4'],
+                maxZoom: 20
+            }).addTo(window.myMap);
+        } else {
+            // 清除旧的 marker (简单的重置策略)
+            window.myMap.eachLayer((layer) => {
+                if(layer instanceof L.CircleMarker) window.myMap.removeLayer(layer);
+            });
         }
+
         (data.hotspots || []).forEach(h => {
             const info = SCENIC_SPOTS_MAP[h.grid_id];
             if (!info) return;
 
             let tip = `<div class="p-1"><div class="font-bold text-blue-600">${info.cn}</div><div class="text-[10px] text-blue-500 mt-1 mb-1">点击查看百科</div>`;
-            if (isAdvanced) tip += `<div class="mt-1 pt-1 border-t border-gray-200 text-[10px] text-gray-500">网格: ${h.grid_id}</div>`;
+            tip += `<div class="mt-1 pt-1 border-t border-gray-200 text-[10px] text-gray-500">网格: ${h.grid_id}</div>`;
             tip += `</div>`;
 
             const marker = L.circleMarker([info.lat, info.lon], {
@@ -260,8 +473,48 @@
         });
     }
 
+    async function loadDashboardData(datasetStr) {
+        try {
+            // 直接通过静态路径拉取，规避全局的 session
+            const jsonPath = `/${datasetStr}/experiment_report.json`;
+            const res = await fetch(jsonPath);
+            if(!res.ok) throw new Error("Fetch failed");
+            const data = await res.json();
+            renderDashboard(data);
+            updateGalleryImages(datasetStr);
+        } catch(e) {
+            console.error("Local JSON fetch failed, trying API fallback", e);
+            try {
+                // 如果直连失败，尝试使用默认 API 容灾
+                const fbRes = await fetch('/api/data');
+                const fbData = await fbRes.json();
+                renderDashboard(fbData);
+                updateGalleryImages(datasetStr);
+            } catch(err) {
+                console.error("All fetch methods failed.");
+            }
+        }
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
-        fetch('/api/data').then(r => r.json()).then(renderDashboard).catch(()=>{});
+        // 绑定数据集下拉框事件
+        const dsSelector = document.getElementById('board-dataset-switcher');
+        if(dsSelector) {
+            dsSelector.addEventListener('change', function(e) {
+                loadDashboardData(e.target.value);
+            });
+            // 初始化加载
+            loadDashboardData(dsSelector.value);
+        }
+
+        // 绑定曲线图模型选择器事件
+        const metricsSelector = document.getElementById('metrics-model-selector');
+        if(metricsSelector) {
+            metricsSelector.addEventListener('change', function(e) {
+                const curDataset = dsSelector ? dsSelector.value : 'results2';
+                setImgSrc('img-metrics', `/${curDataset}`, `${e.target.value}_all_metrics_curves`);
+            });
+        }
     });
 </script>
 {% endblock %}

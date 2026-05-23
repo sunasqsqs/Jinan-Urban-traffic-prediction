@@ -90,8 +90,8 @@
                     对合并后的数据进行初步清洗，处理格式错误或冗余数据，生成最终用于模型训练的高质量数据集。
                     <strong>此步骤至关重要，直接决定模型效果。</strong>
                 </p>
-                <div class="code-block"><span class="cmd">python</span> final.py</div>
-                <p class="text-sm text-gray-500"><span class="text-emerald-500 font-bold">✓ 输出结果：</span> 生成文件 <code>data/finaldata.csv</code>。</p>
+                <div class="code-block"><span class="cmd">python</span> final.py test.py</div>
+                <p class="text-sm text-gray-500"><span class="text-emerald-500 font-bold">✓ 输出结果：</span> 生成文件 <code>data/finaldata.csv data/test_data.csv</code>。</p>
             </section>
 
             <section id="train">
@@ -105,7 +105,7 @@
                     读取 <code>data/finaldata.csv</code>，构建图神经网络结构并使用 Mamba 模块进行时序特征提取。
                     训练完成后会自动保存最优权重文件。
                 </p>
-                <div class="code-block"><span class="cmd">python</span> trainmodel.py</div>
+                <div class="code-block"><span class="cmd">python</span> trainmodel.py  realtime.py</div>
                 <p class="text-sm text-gray-500"><span class="text-emerald-500 font-bold">✓ 输出结果：</span> 生成模型权重文件（如 <code>best_model_Mamba-GNN.pt</code>）。</p>
             </section>
 

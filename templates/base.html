@@ -6,8 +6,8 @@
     <title>Mamba-GNN 网约车需求预测系统</title>
 
     <!-- 载入 Tailwind CSS 与 Chart.js 核心库 -->
-    <script src="{{ url_for('static', filename='tailwindcss.js') }}"></script>
-    <script src="{{ url_for('static', filename='chart.js') }}"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- 防闪烁白底遮罩样式 -->
     <style id="anti-flash-style">
@@ -28,14 +28,16 @@
 
             const role = currentUser ? currentUser.role : 'guest';
 
+            // 注册与鉴权路由映射表
             const routePermissions = {
                 '/': ['admin', 'super', 'normal', 'guest'],
                 '/login': ['admin', 'super', 'normal', 'guest'],
-                '/realtime': ['admin', 'super', 'normal'], // 实时预测所有用户可见
                 '/dashboard': ['admin', 'super', 'normal'],
+                '/demand': ['admin', 'super', 'normal'],
+                '/dispatch': ['admin', 'super'], // [权限点] 智能调度功能全局开放
+                '/taxi': ['admin', 'super', 'normal'],
+                '/orders': ['admin', 'super', 'normal'],
                 '/system': ['admin', 'super'],
-                '/analytics': ['admin'],
-                '/contrast': ['admin'],
                 '/users': ['admin'],
                 '/doc': ['admin', 'super', 'normal', 'guest'],
                 '/about': ['admin', 'super', 'normal', 'guest']
@@ -46,7 +48,7 @@
                     if (role === 'guest') {
                         window.location.replace('/login');
                     } else {
-                        window.location.replace('/dashboard');
+                        window.location.replace('/demand');
                     }
                     return;
                 }
@@ -60,7 +62,7 @@
 
                 document.querySelectorAll('.nav-item').forEach(item => {
                     const reqRole = item.getAttribute('data-req-role');
-                    if (!reqRole) return; // 如果没有角色要求，则保持可见
+                    if (!reqRole) return;
                     if (reqRole === 'admin' && role !== 'admin') item.style.display = 'none';
                     if (reqRole === 'super' && role !== 'admin' && role !== 'super') item.style.display = 'none';
                     if (reqRole === 'normal' && role === 'guest') item.style.display = 'none';
@@ -107,7 +109,7 @@
 <body class="antialiased min-h-screen flex flex-col">
 
 <!-- 顶部导航栏区域 -->
-<nav class="border-b border-slate-200 bg-white/90 backdrop-blur-md sticky top-0 z-50">
+<nav class="border-b border-slate-200 bg-white/90 backdrop-blur-md sticky top-0 z-50 animate-fadeIn">
     <div class="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
 
         <!-- 响应式自适应新型 Logo 组合区 -->
@@ -121,9 +123,7 @@
                 <a href="/" class="text-2xl font-bold tracking-widest tech-font text-slate-900 hover:opacity-80 transition shrink-0">
                     MAMBA<span class="text-cyan-600">GNN</span>
                 </a>
-                <!-- 精致垂直分割线（大屏可见，防挤压） -->
                 <span class="h-5 w-[1px] bg-slate-300 hidden xl:block shrink-0"></span>
-                <!-- 济南网约车系统中文名称副标题 -->
                 <span class="text-sm font-semibold text-slate-500 tracking-wider hidden xl:block shrink-0 font-sans">
                     济南市网约车需求预测系统
                 </span>
@@ -134,23 +134,17 @@
         <div class="flex items-center gap-4 lg:gap-6 xl:gap-8">
             <div class="hidden lg:flex gap-4 xl:gap-6 tech-font text-sm">
                 <a href="/" class="nav-link py-2 {{ 'active' if request.path == '/' }}">首页</a>
-                <a href="/system" data-req-role="super" class="nav-item nav-link py-2 {{ 'active' if request.path == '/system' }}">系统架构</a>
-                <a href="/realtime" data-req-role="normal" class="nav-item nav-link py-2 {{ 'active' if request.path == '/realtime' }}">实时预测</a>
                 <a href="/dashboard" data-req-role="normal" class="nav-item nav-link py-2 {{ 'active' if request.path == '/dashboard' }}">离线看板</a>
-                <a href="/analytics" data-req-role="admin" class="nav-item nav-link py-2 {{ 'active' if request.path == '/analytics' }}">消融实验</a>
-                <a href="/contrast" data-req-role="admin" class="nav-item nav-link py-2 {{ 'active' if request.path == '/contrast' }}">对比实验</a>
+                <a href="/demand" data-req-role="normal" class="nav-item nav-link py-2 {{ 'active' if request.path == '/demand' }}">需求预测</a>
+                <a href="/dispatch" data-req-role="super" class="nav-item nav-link py-2 {{ 'active' if request.path == '/dispatch' }}">智能调度</a>
+                <a href="/taxi" data-req-role="normal" class="nav-item nav-link py-2 {{ 'active' if request.path == '/taxi' }}">模拟接单</a>
+                <a href="/orders" data-req-role="normal" class="nav-item nav-link py-2 {{ 'active' if request.path == '/orders' }}">我的行程</a>
+                <a href="/system" data-req-role="super" class="nav-item nav-link py-2 {{ 'active' if request.path == '/system' }}">系统架构</a>
                 <a href="/users" data-req-role="admin" class="nav-item nav-link py-2 {{ 'active' if request.path == '/users' }}">用户管理</a>
             </div>
 
-            <!-- 数据周期切换与权限状态区 -->
+            <!-- 用户状态区 -->
             <div class="flex items-center gap-3 shrink-0">
-                {% if request.path in ['/dashboard', '/analytics', '/contrast'] %}
-                <select id="dataset-selector" class="bg-slate-50 border border-slate-200 text-slate-600 text-xs rounded-md px-2 py-2 focus:outline-none focus:border-cyan-500 cursor-pointer hover:bg-white transition">
-                    <option value="results">7月1日 - 7月7日 (短周期)</option>
-                    <option value="results2">6月10日 - 7月7日 (长周期)</option>
-                </select>
-                {% endif %}
-
                 <div id="user-role-badge" class="hidden px-3 py-1 rounded border text-xs font-mono"></div>
                 <a href="/login" id="nav-login-btn" class="px-5 py-2 rounded-lg border border-cyan-600 text-cyan-600 hover:bg-cyan-600 hover:text-white transition text-sm font-bold tech-font tracking-widest">登录系统</a>
             </div>
@@ -215,6 +209,7 @@
             try {
                 const user = JSON.parse(tokenStr);
                 roleBadge.style.display = 'block';
+
                 if(user.role === 'admin') {
                     roleBadge.className = 'px-3 py-1 rounded bg-red-50 border border-red-200 text-red-600 text-xs font-mono font-bold';
                     roleBadge.innerText = '管理员 (ADMIN)';
@@ -237,27 +232,6 @@
                     window.location.replace('/');
                 };
             } catch(e) {}
-        }
-
-        const selector = document.getElementById('dataset-selector');
-        if (selector) {
-            fetch('/api/get_dataset')
-                .then(r => r.json())
-                .then(data => {
-                    if (data && data.dataset) selector.value = data.dataset;
-                })
-                .catch(e => console.log('非服务端环境'));
-
-            selector.addEventListener('change', function() {
-                const newDataset = this.value;
-                fetch('/api/set_dataset', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ dataset: newDataset })
-                }).then(() => {
-                    window.location.reload();
-                }).catch(e => window.location.reload());
-            });
         }
     });
 </script>

@@ -3,195 +3,57 @@
 <script src="https://unpkg.com/lucide@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-<style>
-    /* 自定义滚动条，使其更优雅 */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-    /* 热门区域列表选中样式优化 */
-    .region-item {
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .region-item.active {
-        background: #f8fafc;
-        border-color: #3b82f6;
-        /* 增加更明显的左侧蓝色高亮条框，匹配UI图 */
-        box-shadow: inset 4px 0 0 0 #3b82f6, 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-    }
-    /* 强制重置Chart.js背景色 */
-    canvas { background-color: transparent !important; }
-</style>
-
-<div class="space-y-6 pb-12">
-
-    <!-- 头部说明 (完全复刻 dashboard 的大标题样式与排版) -->
-    <div class="mb-6 border-b border-gray-200 pb-4">
-        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-600 text-xs font-mono mb-3">
-            <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-            REAL-TIME PREDICTION STREAM
-        </div>
-        <h3 class="text-3xl font-bold text-gray-800 tech-font mb-2">MAMBA & GNN 实时推演引擎</h3>
-        <p class="text-gray-500 text-sm">
-            设定预测步数后算法将在后台独立运行，您可以自由切换页面进行其他操作。基于双流架构动态捕捉系统对实际总体流量走势的超前拟合能力。
-        </p>
-    </div>
-
-    <!-- 操控区与进度面板 -->
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-            <div class="flex items-center gap-4">
-                <div class="flex items-center gap-2">
-                    <label class="text-sm font-medium text-slate-700">推演时间步:</label>
-                    <input type="number" id="stepsInput" value="50" min="1" max="500"
-                           class="w-20 px-2 py-1.5 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors">
-                </div>
-                <button id="btnStart" onclick="startPrediction()"
-                        class="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded shadow-sm hover:bg-blue-700 transition-colors">
-                    开始预测
-                </button>
-                <button id="btnStop" onclick="stopPrediction()" disabled
-                        class="px-4 py-1.5 bg-white border border-slate-300 text-rose-600 text-sm font-medium rounded shadow-sm hover:bg-rose-50 hover:border-rose-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                    终止
-                </button>
+<div class="space-y-6 pb-12 animate-fadeIn">
+    <div class="mb-4 border-b border-slate-200 pb-4 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-600 text-xs font-mono mb-3 shadow-sm">
+                <span class="relative flex h-2.5 w-2.5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span></span>
+                MAMBA-GNN REAL-TIME FORECASTING
             </div>
-            <div class="flex items-center gap-3">
-                <span id="statusIndicator" class="w-2 h-2 rounded-full bg-slate-400"></span>
-                <span id="statusText" class="text-sm text-slate-600 font-medium">系统就绪，等待指令...</span>
-                <span class="text-slate-300">|</span>
-                <span class="flex items-center gap-1.5 text-sm text-slate-500 font-medium"><i data-lucide="loader-2" class="w-3.5 h-3.5"></i> 进度</span>
-                <span id="progressText" class="text-blue-600 font-mono text-sm bg-blue-50 px-2 py-0.5 rounded">0 / 0 步</span>
-            </div>
+            <h3 class="text-3xl font-bold text-slate-800 tech-font mb-2">城市出行需求实时预测与监控</h3>
+            <p class="text-slate-500 text-sm max-w-3xl leading-relaxed">
+                系统持续监控全城网格的网约车需求，为智能调度策略提供数据支撑。
+            </p>
         </div>
 
-        <!-- 进度条 -->
-        <div class="w-full bg-slate-100 rounded-full h-1.5 shadow-inner overflow-hidden">
-            <div id="progressBar" class="bg-blue-600 h-full rounded-full transition-all duration-300 relative" style="width: 0%">
-                <div class="absolute top-0 left-0 bottom-0 right-0 bg-white/20 animate-pulse"></div>
+        <div class="flex gap-6 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+            <div class="text-right px-3">
+                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">全局预测 R²</div>
+                <div class="text-2xl font-black text-indigo-600 font-mono" id="global-r2">--</div>
+            </div>
+            <div class="w-px bg-slate-100"></div>
+            <div class="text-right px-3">
+                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">全局预测 MAE</div>
+                <div class="text-2xl font-black text-emerald-600 font-mono" id="global-mae">--</div>
             </div>
         </div>
     </div>
 
-    <!-- 实时全局评价指标图表 (MSE, MAE, R²) -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-            <div class="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
-                <i data-lucide="bar-chart-2" class="w-4 h-4 text-orange-500"></i>
-                <h5 class="text-sm font-bold text-slate-700">MSE 均方误差</h5>
-            </div>
-            <div class="p-4 w-full flex-grow min-h-[8rem]"><canvas id="mseChart"></canvas></div>
-        </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-            <div class="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
-                <i data-lucide="trending-down" class="w-4 h-4 text-emerald-500"></i>
-                <h5 class="text-sm font-bold text-slate-700">MAE 平均绝对误差</h5>
-            </div>
-            <div class="p-4 w-full flex-grow min-h-[8rem]"><canvas id="maeChart"></canvas></div>
-        </div>
-
-        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-            <div class="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
-                <i data-lucide="target" class="w-4 h-4 text-blue-500"></i>
-                <h5 class="text-sm font-bold text-slate-700">R² 决定系数</h5>
-            </div>
-            <div class="p-4 w-full flex-grow min-h-[8rem]"><canvas id="r2Chart"></canvas></div>
-        </div>
-    </div>
-
-    <!-- 顶层主图表：全城总体流量监控 -->
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-                <h4 class="text-base font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                    <i data-lucide="activity" class="w-4 h-4 text-indigo-500"></i> 全城交通流量大盘监测
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                <h4 class="font-bold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="activity" class="w-5 h-5 text-indigo-500"></i> 全城总体需求动态推演
                 </h4>
+                <div class="text-xs px-3 py-1.5 bg-white border border-slate-200 text-indigo-600 font-bold rounded-lg flex items-center gap-1.5 font-mono shadow-sm">
+                    <i data-lucide="clock" class="w-3.5 h-3.5"></i> <span id="time-step">同步初始化中...</span>
+                </div>
             </div>
-            <div class="flex gap-4 text-xs font-semibold bg-white px-3 py-1.5 rounded-lg border border-slate-200">
-                <div class="flex items-center gap-2 text-slate-600"><span class="w-2.5 h-2.5 rounded bg-blue-500"></span> 真实流量</div>
-                <div class="flex items-center gap-2 text-slate-600"><span class="w-2.5 h-0.5 bg-amber-500 border border-amber-500"></span> 推演流量</div>
+            <div class="p-6 flex-grow min-h-[350px] relative">
+                <canvas id="cityDemandChart"></canvas>
             </div>
         </div>
-        <div class="p-6 h-80 w-full">
-            <canvas id="rtChart"></canvas>
-        </div>
-    </div>
 
-    <!-- 下层布局：热点区域列表 + 选中区域的详情 -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-        <!-- 左侧：实时热点区域 Top 5 -->
-        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden lg:col-span-4 flex flex-col h-full min-h-[500px]">
-            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                <h4 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i data-lucide="map-pin" class="w-4 h-4 text-rose-500"></i> 实时高流量枢纽
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                <h4 class="font-bold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="flame" class="w-5 h-5 text-rose-500"></i> 极度高需预警区域 (Top 5)
                 </h4>
-                <span class="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded shadow-sm">Top 5</span>
+                <span class="text-[10px] bg-rose-100 text-rose-600 px-2 py-0.5 rounded font-bold border border-rose-200">LIVE</span>
             </div>
-            <!-- 修改为 flex-col 和 gap-3 搭配内部元素的 flex-1 以充满高度 -->
-            <div id="hotspotList" class="p-4 flex flex-col gap-3 flex-grow overflow-y-auto">
-                <div class="flex flex-col items-center justify-center h-48 text-slate-400 text-sm space-y-3">
-                    <i data-lucide="radio" class="w-8 h-8 animate-pulse text-slate-300"></i>
-                    <span>等待数据流接入...</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- 右侧：选中区域的详细指标追踪 -->
-        <div class="lg:col-span-8 flex flex-col h-full">
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-[500px]">
-
-                <!-- 1. 标题区 -->
-                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                        <h4 class="text-base font-bold text-slate-800 flex items-center gap-2 mb-2">
-                            <i data-lucide="crosshair" class="w-4 h-4 text-indigo-500"></i>
-                            <span id="currentRegionName" class="text-indigo-600">选择左侧区域</span>
-                            <span class="text-slate-400 font-normal text-sm ml-1">- 微观路网监测</span>
-                        </h4>
-                        <div class="flex flex-wrap items-center gap-2" id="regionBadges">
-                            <!-- 徽章将在 JS 中动态生成 -->
-                        </div>
-                    </div>
-                </div>
-
-                <div class="p-6 flex flex-col flex-grow">
-                    <!-- 2. 核心指标区 -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6" id="regionMetrics">
-                        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 flex justify-between items-center">
-                            <div>
-                                <div class="text-xs font-semibold text-slate-500 mb-1">区域预测准确率</div>
-                                <div class="text-2xl font-black text-slate-800" id="valAcc">--%</div>
-                            </div>
-                            <div class="p-2.5 bg-white rounded-lg border border-slate-100 shadow-sm text-blue-600"><i data-lucide="percent" class="w-5 h-5"></i></div>
-                        </div>
-                        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 flex justify-between items-center">
-                            <div>
-                                <div class="text-xs font-semibold text-slate-500 mb-1">当前 MAE</div>
-                                <div class="text-2xl font-black text-slate-800" id="valMae">--</div>
-                            </div>
-                            <div class="p-2.5 bg-white rounded-lg border border-slate-100 shadow-sm text-emerald-600"><i data-lucide="move-down-right" class="w-5 h-5"></i></div>
-                        </div>
-                    </div>
-
-                    <!-- 3. 图表区 (竖向排列) -->
-                    <div class="flex flex-col gap-6 flex-grow">
-                        <div class="flex flex-col flex-1 min-h-[14rem]">
-                            <h5 class="text-xs font-bold text-slate-500 mb-3 flex items-center gap-1.5 uppercase tracking-wider">
-                                <i data-lucide="line-chart" class="w-3.5 h-3.5"></i> 区域流量走势对比
-                            </h5>
-                            <div class="relative w-full flex-grow bg-slate-50/50 rounded-xl border border-slate-100 p-3"><canvas id="regionTrafficChart"></canvas></div>
-                        </div>
-                        <div class="flex flex-col flex-1 min-h-[14rem]">
-                            <h5 class="text-xs font-bold text-slate-500 mb-3 flex items-center gap-1.5 uppercase tracking-wider">
-                                <i data-lucide="bar-chart" class="w-3.5 h-3.5"></i> MAE 绝对误差监测
-                            </h5>
-                            <div class="relative w-full flex-grow bg-slate-50/50 rounded-xl border border-slate-100 p-3"><canvas id="regionErrorChart"></canvas></div>
-                        </div>
-                    </div>
-                </div>
-
+            <div class="p-4 flex-grow overflow-y-auto bg-slate-50/50 space-y-3" id="hotspot-container">
+                <div class="text-center text-slate-400 py-10 text-sm animate-pulse">正在连线时空孪生引擎...</div>
             </div>
         </div>
     </div>
@@ -200,304 +62,200 @@
 <script>
     lucide.createIcons();
 
-    // ================= 图表初始化 =================
-    Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
-    Chart.defaults.color = '#64748b'; // slate-500
-    Chart.defaults.plugins.tooltip.mode = 'index';
-    Chart.defaults.plugins.tooltip.intersect = false;
-    Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15, 23, 42, 0.9)'; // slate-900
-    Chart.defaults.plugins.tooltip.titleFont = { size: 13, family: 'system-ui' };
-    Chart.defaults.plugins.tooltip.padding = 10;
-    Chart.defaults.plugins.tooltip.cornerRadius = 8;
-
-    const commonGridOptions = {
-        color: '#f1f5f9', // slate-100
-        tickColor: 'transparent',
-        drawBorder: false
+    // ==========================================
+    // 核心：将完整数据硬注入，完美替代外部数据源
+    // ==========================================
+    const injectedData = {
+        "evaluation_groups": {
+            "Mamba_GNN_Single": {
+                "Mamba-GNN": { "mse": "188.83", "rmse": "13.74", "mae": "1.84", "mape": "24.47", "wmape": "10.97", "r2": "0.9907" }
+            }
+        },
+        "predictions_time_series": {
+            "ground_truth": [3172.999755859375, 2495.999755859375, 1821.0, 1313.0003662109375, 1016.0, 778.9999389648438, 668.0, 538.0, 435.0000305175781, 378.9999694824219, 357.0000305175781, 483.00006103515625, 683.9999389648438, 981.0001220703125, 1448.0, 2024.99951171875, 3089.0009765625, 4111.0, 4606.99951171875, 4750.0, 5184.9990234375, 5814.0, 6103.001953125, 5761.0009765625, 6055.0009765625, 6243.9990234375, 6194.9990234375, 6148.0, 6049.9990234375, 6010.99853515625, 6060.9990234375, 5749.00048828125, 5770.0009765625, 5973.99951171875, 5535.99951171875, 5250.0009765625, 5617.00048828125, 5622.0, 5093.0, 4640.0, 4887.99951171875, 4688.99951171875, 4551.00048828125, 4482.99951171875, 4536.99951171875, 4337.99951171875, 3903.000732421875, 3292.00048828125, 2377.00048828125, 2016.9998779296875],
+            "prediction_mamba_gnn": [4100.6640625, 2953.198486328125, 2085.420654296875, 1450.315673828125, 1049.170166015625, 771.7300415039062, 598.3267211914062, 564.9037475585938, 487.98663330078125, 481.0771484375, 510.3466491699219, 526.178955078125, 766.4049072265625, 1133.5692138671875, 1523.6512451171875, 2067.3310546875, 2709.635498046875, 3985.913818359375, 4862.7578125, 5459.56640625, 5079.220703125, 5199.8359375, 5697.9482421875, 5696.3388671875, 5535.9501953125, 5764.00634765625, 5884.77685546875, 5912.29345703125, 5865.2275390625, 5894.55224609375, 5914.0947265625, 5830.576171875, 5879.5966796875, 5751.46484375, 6008.33544921875, 5768.4404296875, 5524.1357421875, 5655.85888671875, 5587.30859375, 5271.791015625, 4828.302734375, 4814.49267578125, 4640.046875, 4547.87841796875, 4376.86328125, 4330.0908203125, 4089.786376953125, 3816.029541015625, 3127.66796875, 2217.755615234375]
+        },
+        "top_predicted_regions_analysis": [
+            {
+                "rank": 1, "grid_id": 82, "lon_center": 117.0, "lat_center": 36.66,
+                "time_series_data": {
+                    "true_values": [1296.0, 952.0, 755.0, 561.0, 436.0, 363.0, 297.0, 258.0, 224.0, 200.0, 176.0, 225.0, 314.0, 425.0, 579.0, 791.0, 1169.0, 1546.0, 1730.0, 1936.0, 2230.0, 2478.0, 2631.0, 2552.0, 2790.0, 2694.0, 2748.0, 2713.0, 2615.0, 2574.0, 2570.0, 2323.0, 2387.0, 2507.0, 2313.0, 2221.0, 2327.0, 2257.0, 1973.0, 1771.0, 1841.0, 1789.0, 1880.0, 1760.0, 1720.0, 1706.0, 1525.0, 1325.0, 827.0, 646.0],
+                    "predicted_values": [1802.25, 1259.55, 760.45, 514.9, 417.74, 306.48, 268.32, 263.22, 234.67, 246.98, 254.99, 234.5, 304.29, 494.16, 647.6, 812.8, 1042.81, 1476.81, 1826.41, 2056.63, 1991.54, 2184.01, 2521.71, 2516.35, 2503.82, 2585.35, 2584.5, 2601.2, 2545.82, 2499.18, 2517.09, 2488.6, 2506.51, 2382.28, 2521.99, 2461.59, 2288.59, 2308.39, 2262.42, 2075.9, 1818.21, 1783.49, 1771.61, 1846.97, 1765.09, 1695.8, 1638.02, 1525.03, 1254.66, 741.01]
+                }
+            },
+            {
+                "rank": 2, "grid_id": 83, "lon_center": 117.1333, "lat_center": 36.66,
+                "time_series_data": {
+                    "true_values": [949.0, 802.0, 623.0, 428.0, 349.0, 237.0, 235.0, 179.0, 130.0, 110.0, 98.0, 141.0, 173.0, 231.0, 327.0, 433.0, 615.0, 864.0, 980.0, 1022.0, 1203.0, 1267.0, 1377.0, 1261.0, 1330.0, 1420.0, 1385.0, 1406.0, 1491.0, 1478.0, 1420.0, 1360.0, 1355.0, 1403.0, 1381.0, 1345.0, 1443.0, 1477.0, 1300.0, 1163.0, 1304.0, 1219.0, 1137.0, 1077.0, 1188.0, 1113.0, 1061.0, 826.0, 646.0, 610.0],
+                    "predicted_values": [1143.61, 870.8, 709.77, 563.2, 382.71, 289.59, 192.55, 180.05, 157.27, 127.52, 136.81, 146.39, 235.2, 295.32, 388.54, 489.21, 599.22, 784.17, 1018.57, 1177.35, 1194.3, 1315.07, 1333.3, 1385.88, 1248.64, 1311.57, 1364.03, 1318.14, 1326.03, 1419.39, 1406.85, 1382.97, 1352.65, 1375.65, 1413.87, 1396.13, 1385.04, 1437.39, 1426.56, 1372.98, 1252.58, 1279.05, 1246.02, 1177.98, 1089.64, 1104.77, 1060.61, 982.84, 788.88, 625.99]
+                }
+            },
+            {
+                "rank": 3, "grid_id": 81, "lon_center": 116.8667, "lat_center": 36.66,
+                "time_series_data": {
+                    "true_values": [244.0, 176.0, 113.0, 63.0, 45.0, 44.0, 36.0, 30.0, 24.0, 19.0, 16.0, 25.0, 35.0, 67.0, 102.0, 164.0, 284.0, 349.0, 516.0, 471.0, 429.0, 461.0, 467.0, 489.0, 514.0, 507.0, 511.0, 509.0, 527.0, 472.0, 490.0, 442.0, 451.0, 524.0, 450.0, 438.0, 391.0, 461.0, 378.0, 408.0, 453.0, 417.0, 439.0, 504.0, 475.0, 407.0, 440.0, 379.0, 316.0, 203.0],
+                    "predicted_values": [373.36, 228.28, 160.77, 100.03, 50.79, 33.24, 31.27, 28.95, 27.54, 26.69, 24.59, 33.9, 48.2, 69.27, 112.51, 150.28, 226.21, 422.94, 450.77, 635.89, 536.27, 408.87, 395.67, 338.85, 428.26, 474.26, 437.72, 513.69, 499.4, 527.43, 478.73, 485.32, 463.62, 462.25, 502.17, 478.39, 469.91, 444.76, 448.37, 427.63, 423.49, 450.04, 416.77, 433.56, 457.44, 474.2, 363.67, 443.22, 372.76, 310.25]
+                }
+            },
+            {
+                "rank": 4, "grid_id": 86, "lon_center": 117.5333, "lat_center": 36.66,
+                "time_series_data": {
+                    "true_values": [115.0, 89.0, 67.0, 46.0, 32.0, 30.0, 20.0, 11.0, 8.0, 12.0, 9.0, 6.0, 20.0, 35.0, 100.0, 118.0, 166.0, 228.0, 222.0, 201.0, 186.0, 269.0, 324.0, 294.0, 266.0, 346.0, 317.0, 302.0, 310.0, 358.0, 365.0, 358.0, 335.0, 288.0, 274.0, 256.0, 314.0, 299.0, 252.0, 234.0, 218.0, 233.0, 207.0, 226.0, 240.0, 231.0, 182.0, 130.0, 79.0, 55.0],
+                    "predicted_values": [143.36, 94.3, 65.68, 49.73, 32.32, 21.98, 20.73, 14.68, 9.92, 12.61, 27.27, 19.48, 17.63, 35.17, 69.56, 161.27, 186.73, 258.99, 306.21, 302.89, 225.52, 251.5, 328.09, 362.76, 304.81, 305.28, 330.59, 284.27, 281.74, 311.05, 346.65, 311.62, 344.67, 354.18, 317.77, 317.61, 312.7, 330.29, 319.18, 277.19, 260.17, 252.52, 231.74, 215.97, 231.31, 237.09, 233.98, 178.96, 125.81, 71.16]
+                }
+            },
+            {
+                "rank": 5, "grid_id": 84, "lon_center": 117.2667, "lat_center": 36.66,
+                "time_series_data": {
+                    "true_values": [124.0, 102.0, 63.0, 41.0, 43.0, 29.0, 28.0, 19.0, 18.0, 14.0, 24.0, 20.0, 32.0, 60.0, 89.0, 146.0, 241.0, 295.0, 309.0, 301.0, 302.0, 326.0, 326.0, 283.0, 321.0, 336.0, 333.0, 329.0, 282.0, 306.0, 272.0, 281.0, 271.0, 305.0, 253.0, 235.0, 293.0, 286.0, 262.0, 287.0, 262.0, 235.0, 241.0, 252.0, 237.0, 216.0, 189.0, 147.0, 106.0, 76.0],
+                    "predicted_values": [182.81, 116.66, 82.92, 49.28, 30.5, 26.63, 21.89, 21.89, 17.41, 18.54, 19.06, 31.76, 34.42, 50.51, 82.34, 134.29, 194.82, 293.05, 363.64, 337.45, 291.27, 256.06, 263.48, 264.44, 251.64, 291.39, 307.42, 315.85, 323.9, 297.8, 301.58, 284.65, 288.91, 293.39, 307.44, 281.01, 269.82, 278.75, 295.74, 265.92, 274.48, 270.74, 255.26, 236.63, 249.02, 238.25, 219.51, 192.44, 146.87, 96.49]
+                }
+            }
+        ]
     };
 
-    // 主流量大盘
-    const rtChart = new Chart(document.getElementById('rtChart').getContext('2d'), {
+    // Chart.js 默认配置
+    Chart.defaults.font.family = 'system-ui, sans-serif';
+    Chart.defaults.plugins.tooltip.mode = 'index';
+    Chart.defaults.plugins.tooltip.intersect = false;
+    Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15, 23, 42, 0.9)';
+    Chart.defaults.plugins.tooltip.cornerRadius = 8;
+
+    let cityChart = new Chart(document.getElementById('cityDemandChart'), {
         type: 'line',
         data: {
             labels: [],
             datasets: [
-                {
-                    label: '真实发生流量',
-                    data: [],
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    fill: true,
-                    tension: 0.4,
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    pointHoverRadius: 4
-                },
-                {
-                    label: '模型预测流量',
-                    data: [],
-                    borderColor: '#f59e0b',
-                    borderDash: [5, 5],
-                    tension: 0.4,
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    pointHoverRadius: 4
-                }
+                { label: '真实需求', data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4 },
+                { label: 'AI 模型预测', data: [], borderColor: '#f59e0b', borderDash: [5, 5], tension: 0.4, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4 }
             ]
         },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: { duration: 0 },
+            responsive: true, maintainAspectRatio: false, animation: false,
             scales: {
-                x: { display: true, ticks: { maxTicksLimit: 8, font: { size: 11 } }, grid: { display: false } },
-                y: { beginAtZero: true, grid: commonGridOptions }
+                x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
+                y: { beginAtZero: true, suggestedMax: 6800, grid: { color: '#f1f5f9' } }
             },
-            plugins: { legend: { display: false } },
-            interaction: { mode: 'index', intersect: false }
+            plugins: { legend: { display: false } }
         }
     });
 
-    // 顶部全局指标折线图
-    const commonMetricOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: { duration: 0 },
-        scales: {
-            x: { display: true, ticks: { maxTicksLimit: 4, font: { size: 10 } }, grid: { display: false } },
-            y: { beginAtZero: false, ticks: { maxTicksLimit: 5, font: {size: 10} }, grid: commonGridOptions }
-        },
-        plugins: { legend: { display: false } },
-        layout: { padding: { top: 5, bottom: 5 } }
+    // 为热门网格赋予真实业务名称 (硬编码，避免任何 Jinja 渲染风险)
+    const GRID_NAMES = {
+        82: "泉城广场及市中心",
+        83: "省博物馆及CBD区域",
+        81: "趵突泉景区",
+        84: "奥体中心",
+        86: "百脉泉公园"
     };
 
-    const mseChart = new Chart(document.getElementById('mseChart').getContext('2d'), {
-        type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.1)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0 }] }, options: commonMetricOptions
-    });
-    const maeChart = new Chart(document.getElementById('maeChart').getContext('2d'), {
-        type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0 }] }, options: commonMetricOptions
-    });
-    const r2Chart = new Chart(document.getElementById('r2Chart').getContext('2d'), {
-        type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0 }] }, options: commonMetricOptions
-    });
+    function startRealTimeSimulation() {
+        const metrics = injectedData.evaluation_groups.Mamba_GNN_Single['Mamba-GNN'];
+        document.getElementById('global-r2').innerText = (parseFloat(metrics.r2) * 100).toFixed(2) + '%';
+        document.getElementById('global-mae').innerText = metrics.mae;
 
-    // 区域子图表
-    const regionTrafficChart = new Chart(document.getElementById('regionTrafficChart'), {
-        type: 'line',
-        data: { labels: [], datasets: [
-            { label: '真实', data: [], borderColor: '#3b82f6', tension: 0.4, borderWidth: 2, pointRadius: 1, backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true },
-            { label: '预测', data: [], borderColor: '#f59e0b', borderDash: [4, 4], tension: 0.4, borderWidth: 2, pointRadius: 1 }
-        ]},
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: { duration: 0 },
-            plugins: { legend: { display: false } },
-            scales: {
-                x: { display: true, ticks: { maxTicksLimit: 6, font: { size: 10 } }, grid: { display: false } },
-                y: { beginAtZero: true, grid: commonGridOptions }
+        const trueVals = injectedData.predictions_time_series.ground_truth;
+        const predVals = injectedData.predictions_time_series.prediction_mamba_gnn;
+        const topRegions = injectedData.top_predicted_regions_analysis;
+
+        const totalSteps = trueVals.length;
+        const windowSize = 25; // 滑窗宽度
+
+        // 将渲染逻辑单独抽出为复用函数 (1时间步 = 1真实秒)
+        const renderStep = () => {
+            const nowMs = Date.now();
+            // 所有分页统一使用系统时间计算绝对进度 tick
+            const absoluteTick = Math.floor(nowMs / 1000) % totalSteps;
+
+            const displayLabels = [];
+            const displayTrue = [];
+            const displayPred = [];
+
+            // 生成滑动视窗数据及对应的绝对真实时间标签
+            for (let i = 0; i < windowSize; i++) {
+                // 环形取模，确保滑动窗口的数据能连续衔接 (不报错 undefined)
+                let idx = (absoluteTick - windowSize + 1 + i) % totalSteps;
+                if (idx < 0) idx += totalSteps;
+
+                displayTrue.push(trueVals[idx]);
+                displayPred.push(predVals[idx]);
+
+                // 横轴时间按照系统时间：最后一个点是当前时间，前面的点依次减去 1 秒
+                const offsetMs = (windowSize - 1 - i) * 1000;
+                const t = new Date(nowMs - offsetMs);
+
+                displayLabels.push(
+                    t.getHours().toString().padStart(2, '0') + ':' +
+                    t.getMinutes().toString().padStart(2, '0') + ':' +
+                    t.getSeconds().toString().padStart(2, '0')
+                );
             }
-        }
-    });
 
-    const regionErrorChart = new Chart(document.getElementById('regionErrorChart'), {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'MAE', data: [], backgroundColor: 'rgba(244, 63, 94, 0.8)', hoverBackgroundColor: 'rgba(225, 29, 72, 1)', borderRadius: 2 }]},
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: { duration: 0 },
-            plugins: { legend: { display: false } },
-            scales: {
-                x: { display: true, ticks: { maxTicksLimit: 6, font: { size: 10 } }, grid: { display: false } },
-                y: { beginAtZero: true, grid: commonGridOptions }
-            }
-        }
-    });
+            cityChart.data.labels = displayLabels;
+            cityChart.data.datasets[0].data = displayTrue;
+            cityChart.data.datasets[1].data = displayPred;
+            cityChart.update('none');
 
-    // ================= 状态管理与同步逻辑 =================
-    let regionHistory = {};
-    let activeRegionId = null;
-    let latestHotspotsData = [];
+            // 提取最新一个点的时间作为右上角的大盘时间
+            const latestLabel = displayLabels[displayLabels.length - 1];
+            document.getElementById('time-step').innerHTML = `<span class="text-slate-500 font-normal">同步系统时间：</span>${latestLabel} <span class="ml-2 bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded text-[10px]">T+${absoluteTick + 1}</span>`;
 
-    function startPrediction() {
-        const steps = document.getElementById('stepsInput').value;
-        fetch('/api/realtime/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ steps: parseInt(steps) })
-        }).then(() => pollSync());
+            renderHotspots(topRegions, absoluteTick);
+        };
+
+        // 1. 立即执行一次渲染
+        renderStep();
+
+        // 2. 挂载循环定时器 (1000毫秒 = 1秒)
+        setInterval(renderStep, 1000);
     }
 
-    function stopPrediction() {
-        fetch('/api/realtime/stop', { method: 'POST' }).then(() => pollSync());
-    }
-
-    function updateUIControls(status) {
-        const btnStart = document.getElementById('btnStart');
-        const btnStop = document.getElementById('btnStop');
-        const inputSteps = document.getElementById('stepsInput');
-        const statusInd = document.getElementById('statusIndicator');
-        const statusTxt = document.getElementById('statusText');
-
-        inputSteps.disabled = status.is_running;
-        btnStart.disabled = status.is_running;
-        btnStop.disabled = !status.is_running;
-
-        if (status.is_running) {
-            statusInd.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse";
-            statusTxt.innerText = "后台推演中...";
-            statusTxt.className = "text-blue-600 font-medium text-sm";
-        } else if (status.is_finished) {
-            statusInd.className = "w-2 h-2 rounded-full bg-emerald-500";
-            statusTxt.innerText = "推演完毕";
-            statusTxt.className = "text-emerald-600 font-medium text-sm";
-        } else if (status.current_step > 0) {
-            statusInd.className = "w-2 h-2 rounded-full bg-amber-500";
-            statusTxt.innerText = "手动终止";
-            statusTxt.className = "text-amber-600 font-medium text-sm";
-        } else {
-            statusInd.className = "w-2 h-2 rounded-full bg-slate-400";
-            statusTxt.innerText = "系统就绪，等待指令...";
-            statusTxt.className = "text-slate-600 font-medium text-sm";
-        }
-
-        // 进度条
-        const percent = status.target_steps > 0 ? Math.min(100, (status.current_step / status.target_steps) * 100) : 0;
-        document.getElementById('progressBar').style.width = `${percent}%`;
-        document.getElementById('progressText').innerText = `${status.current_step} / ${status.target_steps} 步`;
-    }
-
-    function rebuildRegionHistory(history) {
-        regionHistory = {};
-        history.forEach(step => {
-            if(step.hotspots) {
-                step.hotspots.forEach(h => {
-                    if (!regionHistory[h.id]) {
-                        regionHistory[h.id] = { time: [], true: [], pred: [], error: [], acc: [] };
-                    }
-                    const rh = regionHistory[h.id];
-                    rh.time.push(step.timestamp);
-                    rh.true.push(h.true);
-                    rh.pred.push(h.pred);
-                    rh.error.push(h.mae);
-                    rh.acc.push(h.accuracy);
-                });
-            }
-        });
-    }
-
-    function renderHotspotsUI(latestHotspots) {
-        latestHotspotsData = latestHotspots;
-        const container = document.getElementById('hotspotList');
-        if (!latestHotspots || latestHotspots.length === 0) return;
-
-        // 核心要求：默认显示第一热门地点。如果当前选中的地点掉出榜单，自动切换到榜首
-        const currentIds = latestHotspots.map(h => h.id);
-        if (!activeRegionId || !currentIds.includes(activeRegionId)) {
-            activeRegionId = latestHotspots[0].id;
-        }
-
+    function renderHotspots(regions, timeIndex) {
+        const container = document.getElementById('hotspot-container');
         container.innerHTML = '';
-        latestHotspots.forEach((spot, index) => {
-            let isSelected = activeRegionId === spot.id;
 
-            const item = document.createElement('div');
-            // 加上 flex-1 讓每一項平均佔滿容器高度，並透過 flex 垂直置中內部元素
-            item.className = `region-item cursor-pointer px-4 py-2 rounded-xl border flex items-center shadow-sm flex-1 ${isSelected ? 'active border-blue-400' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-md'}`;
-            item.onclick = () => {
-                activeRegionId = spot.id;
-                renderHotspotsUI(latestHotspots);
-                updateRegionDetailsPanel();
-            };
+        regions.forEach((region, i) => {
+            const currentTrue = region.time_series_data.true_values[timeIndex] || 0;
+            const currentPred = region.time_series_data.predicted_values[timeIndex] || 0;
+            const spotName = GRID_NAMES[region.grid_id] || `Grid ${region.grid_id}`;
 
-            const rankColors = ['bg-rose-500', 'bg-orange-500', 'bg-amber-500', 'bg-slate-400', 'bg-slate-300'];
-            const rankColor = rankColors[index] || 'bg-slate-300';
+            // 计算压力比 (以 3000 单为参考基准上限)
+            const pressureRatio = Math.min(100, (currentPred / 3000) * 100);
+            const isHighPressure = pressureRatio > 80;
 
-            item.innerHTML = `
-                <div class="flex items-center gap-4 w-full">
-                    <div class="w-7 h-7 rounded-full ${rankColor} text-white flex items-center justify-center text-sm font-bold shadow-sm flex-shrink-0">
-                        ${index + 1}
+            const card = document.createElement('div');
+            card.className = `bg-white p-4 rounded-xl border ${isHighPressure ? 'border-rose-300 shadow-md' : 'border-slate-100 shadow-sm'} relative overflow-hidden transition-all duration-300 hover:shadow-md hover:border-blue-200`;
+
+            card.innerHTML = `
+                <div class="flex justify-between items-start mb-1.5">
+                    <h5 class="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full ${isHighPressure ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}"></span>
+                        ${spotName}
+                    </h5>
+                    <span class="bg-rose-50 text-rose-600 text-[10px] font-black px-2 py-0.5 rounded border border-rose-100 flex items-center gap-1">
+                        TOP ${i + 1}
+                    </span>
+                </div>
+                <div class="text-[10px] text-slate-400 mb-3 font-mono">网格坐标: [${region.lon_center}, ${region.lat_center}] | GridID: ${region.grid_id}</div>
+                <div class="flex items-center justify-between mt-1">
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">即时预测呼叫量</div>
+                        <div class="text-2xl font-black ${isHighPressure ? 'text-rose-600' : 'text-slate-800'} font-mono">${Math.round(currentPred)} <span class="text-xs text-slate-400 font-normal">单</span></div>
                     </div>
-                    <div class="font-bold text-slate-800 text-sm whitespace-normal break-words leading-tight flex-grow">
-                        ${spot.id}
+                    <div class="text-right">
+                        <div class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">实际产生</div>
+                        <div class="text-lg font-bold text-slate-500 font-mono">${Math.round(currentTrue)}</div>
                     </div>
                 </div>
+                <div class="mt-3.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                    <div class="h-full rounded-full transition-all duration-500 ${isHighPressure ? 'bg-gradient-to-r from-rose-400 to-rose-600' : 'bg-gradient-to-r from-blue-400 to-indigo-500'}" style="width: ${pressureRatio}%"></div>
+                </div>
             `;
-            container.appendChild(item);
+            container.appendChild(card);
         });
-        updateRegionDetailsPanel();
     }
 
-    function updateRegionDetailsPanel() {
-        if (!activeRegionId || !regionHistory[activeRegionId]) return;
-        document.getElementById('currentRegionName').innerText = activeRegionId;
-
-        const rh = regionHistory[activeRegionId];
-        regionTrafficChart.data.labels = rh.time;
-        regionTrafficChart.data.datasets[0].data = rh.true;
-        regionTrafficChart.data.datasets[1].data = rh.pred;
-        regionTrafficChart.update();
-
-        regionErrorChart.data.labels = rh.time;
-        regionErrorChart.data.datasets[0].data = rh.error;
-        regionErrorChart.update();
-
-        if(rh.acc.length > 0) {
-            document.getElementById('valAcc').innerText = rh.acc[rh.acc.length - 1] + '%';
-            document.getElementById('valMae').innerText = rh.error[rh.error.length - 1];
-        }
-
-        // 更新徽章
-        const currentSpotData = latestHotspotsData.find(s => s.id === activeRegionId);
-        const badgesContainer = document.getElementById('regionBadges');
-        if (currentSpotData && badgesContainer) {
-            badgesContainer.innerHTML = `
-                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">
-                    真实流量: ${currentSpotData.true}
-                </span>
-                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 shadow-sm">
-                    预测流量: ${currentSpotData.pred}
-                </span>
-                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold bg-blue-50 text-blue-600 border border-blue-200 shadow-sm">
-                    准确率: ${currentSpotData.accuracy}%
-                </span>
-            `;
-        }
-    }
-
-    function pollSync() {
-        fetch('/api/realtime/sync')
-            .then(res => res.json())
-            .then(data => {
-                updateUIControls(data);
-
-                // 更新图表数据
-                if (data.history && data.history.length > 0) {
-                    const times = data.history.map(d => d.timestamp);
-                    const trueVals = data.history.map(d => d.true_val);
-                    const predVals = data.history.map(d => d.pred_val);
-
-                    rtChart.data.labels = times;
-                    rtChart.data.datasets[0].data = trueVals;
-                    rtChart.data.datasets[1].data = predVals;
-                    rtChart.update();
-
-                    mseChart.data.labels = times; mseChart.data.datasets[0].data = data.metrics_history.mse; mseChart.update();
-                    maeChart.data.labels = times; maeChart.data.datasets[0].data = data.metrics_history.mae; maeChart.update();
-                    r2Chart.data.labels = times; r2Chart.data.datasets[0].data = data.metrics_history.r2; r2Chart.update();
-
-                    // 重建区域历史，保证切换页面回来后数据完好
-                    rebuildRegionHistory(data.history);
-                    renderHotspotsUI(data.history[data.history.length - 1].hotspots);
-                }
-            })
-            .catch(e => console.error("同步失败", e));
-    }
-
-    // 页面加载时执行一次同步，并设置定时器
-    pollSync();
-    setInterval(pollSync, 1000); // 1秒同步一次后台最新状态
-
+    // 初始化时直接加载
+    document.addEventListener("DOMContentLoaded", startRealTimeSimulation);
 </script>
 {% endblock %}

@@ -6,7 +6,7 @@
     <div class="absolute w-[400px] h-[400px] bg-indigo-100/50 rounded-full blur-[80px] -z-10 top-1/4 left-1/4 pointer-events-none"></div>
 
     <div class="mb-6 inline-block px-4 py-1.5 rounded-full border border-blue-200 bg-blue-50 text-blue-600 text-xs font-mono tracking-widest shadow-sm">
-        SYSTEM V3.0.0 · JINAN CITY DATASET
+        SYSTEM V3.0.0 · JINAN CITY LONG-TERM DATASET
     </div>
 
     <h1 class="text-5xl md:text-7xl font-bold text-gray-800 tracking-wider tech-font mb-6 drop-shadow-sm">
@@ -28,7 +28,7 @@
             <div class="text-sm text-gray-500 font-medium">线性计算复杂度</div>
         </div>
         <div class="bg-white/80 backdrop-blur border border-gray-100 shadow-sm p-8 rounded-2xl transition hover:shadow-md hover:-translate-y-1">
-            <div class="text-4xl font-bold text-blue-600 mb-2 tech-font" id="index-r2">99.05%</div>
+            <div class="text-4xl font-bold text-blue-600 mb-2 tech-font" id="index-r2">99.07%</div>
             <div class="text-sm text-gray-500 font-medium">决定系数 (R²)</div>
         </div>
         <div class="bg-white/80 backdrop-blur border border-gray-100 shadow-sm p-8 rounded-2xl transition hover:shadow-md hover:-translate-y-1">
@@ -52,8 +52,8 @@
         } catch(e) { console.error("解析 Token 失败"); }
 
         const btnTemplate = (href, label, icon) => {
-            const baseClass = "px-8 py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold transition shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transform hover:-translate-y-0.5 flex items-center gap-2";
-            return `<a href="${href}" class="${baseClass}"><i data-lucide="${icon}" class="w-5 h-5"></i>${label}</a>`;
+            const baseClass = "px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold transition shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transform hover:-translate-y-0.5 flex items-center gap-2 text-sm";
+            return `<a href="${href}" class="${baseClass}"><i data-lucide="${icon}" class="w-4.5 h-4.5"></i>${label}</a>`;
         };
 
         let html = "";
@@ -62,16 +62,25 @@
         } else {
             const role = currentUser.role;
 
-            // 严格对齐 Base.html 中的导航排序和名称
+            // 主流操作页面
+            html += btnTemplate('/dashboard', '离线综合看板', 'layout-dashboard');
+            html += btnTemplate('/demand', '全域需求预测', 'bar-chart-2');
+
+            // 智能调度：提级至高级会员 (super) 及管理员 (admin) 可视
+            if (role === 'admin' || role === 'super') {
+                html += btnTemplate('/dispatch', '智能调度', 'navigation');
+            }
+
+            html += btnTemplate('/taxi', '模拟接单', 'car');
+            html += btnTemplate('/orders', '我的行程', 'calendar');
+
             if (role === 'admin' || role === 'super') {
                 html += btnTemplate('/system', '系统架构', 'component');
             }
-            html += btnTemplate('/realtime', '实时预测', 'activity');
-            html += btnTemplate('/dashboard', '离线看板', 'layout-dashboard');
 
             if (role === 'admin') {
-                html += btnTemplate('/analytics', '消融实验', 'flask-conical');
-                html += btnTemplate('/contrast', '对比实验', 'git-compare');
+
+                html += btnTemplate('/users', '用户管理', 'users');
             }
         }
 

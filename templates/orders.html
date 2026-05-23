@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block content %}
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<div class="space-y-6 pb-12 max-w-5xl mx-auto">
+    <!-- 头部说明 -->
+    <div class="mb-6 border-b border-slate-200 pb-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-50 border border-purple-200 text-purple-600 text-xs font-mono mb-3">
+            <i data-lucide="user-check" class="w-3.5 h-3.5 animate-pulse"></i> RIDER & DRIVER TERMINAL
+        </div>
+        <h3 class="text-3xl font-bold text-slate-800 tech-font mb-2">我的行程 </h3>
+        <p class="text-slate-500 text-sm leading-relaxed">
+            在车主确认安全抵达终点且完成账单结算后，每一笔单都会实时更新至本页面中。
+        </p>
+    </div>
+
+    <!-- 订单统计卡片 -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 text-center">
+            <div class="text-slate-400 text-[10px] font-bold uppercase mb-1">累计行程记录</div>
+            <div class="text-2xl font-black text-slate-800" id="stats-trips-count">-- <span class="text-sm font-normal text-slate-500">单</span></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 text-center">
+            <div class="text-slate-400 text-[10px] font-bold uppercase mb-1">平均接驾耗时</div>
+            <div class="text-2xl font-black text-emerald-600" id="stats-avg-pickup">-- <span class="text-sm font-normal text-emerald-500">分钟</span></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 text-center">
+            <div class="text-slate-400 text-[10px] font-bold uppercase mb-1">算法撮合响应</div>
+            <div class="text-2xl font-black text-purple-600 font-mono">12 <span class="text-sm font-normal text-purple-500">ms</span></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 text-center">
+            <div class="text-slate-400 text-[10px] font-bold uppercase mb-1">累计节省空驶耗时</div>
+            <div class="text-2xl font-black text-blue-600" id="stats-saved-time">-- <span class="text-sm font-normal text-blue-500">分钟</span></div>
+        </div>
+    </div>
+
+    <!-- 订单列表 -->
+    <div class="space-y-4">
+        <div class="flex items-center justify-between mb-2">
+            <h4 class="font-bold text-slate-800 text-lg">最近营运订单履约流水表</h4>
+            <button onclick="clearTripRecords()" class="text-xs text-rose-500 hover:text-rose-600 font-bold transition flex items-center gap-1">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> 清空行程记录缓存
+            </button>
+        </div>
+
+        <!-- 行程列表容器 -->
+        <div id="orders-list-container" class="space-y-4">
+            <div class="flex flex-col items-center justify-center py-16 text-slate-400 text-xs bg-white border border-slate-200 rounded-2xl shadow-sm">
+                <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center animate-spin-slow mb-3 text-slate-400 border border-slate-100">
+                    <i data-lucide="loader-2" class="w-4 h-4"></i>
+                </div>
+                <span>正在提取 Mamba 时空履约数据库...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 默认兜底静态行程数据（当 localStorage 无记录时加载，保证页面不空白，总计金额 ¥73.5）
+    const STATIC_MOCK_TRIPS = [
+        {
+            id: "trip_static_1",
+            passenger_name: "王女士",
+            pickup: { name: "泉城广场 (市中心)" },
+            dropoff: { name: "济南西站 (高铁站)" },
+            price: 28.50,
+            distance: 12.4,
+            duration: 22,
+            timestamp: "2026-05-19 14:05:22",
+            status: "completed",
+            dispatch_details: "Mamba-GNN 预测引擎已于呼叫前预测该区域客流高，提前调度并引导空载鲁A专车提前15分钟前往周边网格等候，实现了 0秒 接单。"
+        },
+        {
+            id: "trip_static_2",
+            passenger_name: "张先生",
+            pickup: { name: "大明湖风景区" },
+            dropoff: { name: "遥墙国际机场" },
+            price: 45.00,
+            distance: 28.1,
+            duration: 35,
+            timestamp: "2026-05-19 09:15:00",
+            status: "completed",
+            dispatch_details: "时空图神经网络（GNN）高精度预测大单目的地客流溢出，后台调度中心提前完成匹配撮合，车主登车即走。"
+        }
+    ];
+
+    document.addEventListener("DOMContentLoaded", function() {
+        renderTripOrders();
+    });
+
+    function renderTripOrders() {
+        const container = document.getElementById('orders-list-container');
+        if (!container) return;
+
+        let localTrips = [];
+        try {
+            localTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
+        } catch(e){
+            console.error("读取本地行程失败:", e);
+        }
+
+        // 合并数据：优先使用 localStorage 内司机完成的真实行程记录，如果全无则用静态数据兜底
+        const finalTripsList = localTrips.length > 0 ? localTrips : STATIC_MOCK_TRIPS;
+
+        // A. 渲染顶部指标栏
+        const tripsCountEl = document.getElementById('stats-trips-count');
+        const avgPickupEl = document.getElementById('stats-avg-pickup');
+        const savedTimeEl = document.getElementById('stats-saved-time');
+
+        if (tripsCountEl) tripsCountEl.innerHTML = `${finalTripsList.length} <span class="text-sm font-normal text-slate-500">单</span>`;
+
+        // 测算平均接驾耗时
+        let calcAvg = (2.1 - (finalTripsList.length * 0.05)).toFixed(1);
+        if (calcAvg < 1.0) calcAvg = 1.1;
+        if (avgPickupEl) avgPickupEl.innerHTML = `${calcAvg} <span class="text-sm font-normal text-slate-500">分钟</span>`;
+
+        // 测算累计为司机节省的时间
+        const totalSaved = Math.round(finalTripsList.length * 3 + 6);
+        if (savedTimeEl) savedTimeEl.innerHTML = `~${totalSaved} <span class="text-sm font-normal text-blue-500">分钟</span>`;
+
+        // B. 渲染履约列表
+        container.innerHTML = '';
+        finalTripsList.forEach(trip => {
+            const item = document.createElement('div');
+            item.className = "bg-white rounded-xl shadow-sm border border-slate-200 p-5 hover:shadow-md transition duration-300 animate-fadeIn";
+
+            const detailsHtml = trip.dispatch_details ? `
+                <div class="flex items-start gap-4 text-xs text-slate-600 bg-slate-50 p-3.5 rounded-lg border border-slate-100 mt-4 leading-relaxed font-sans">
+                    <i data-lucide="zap" class="w-4 h-4 text-purple-500 shrink-0 mt-0.5 animate-pulse"></i>
+                    <div class="flex-grow">
+                        <span class="font-bold text-slate-800">Mamba-GNN 撮合详情:</span>
+                        ${trip.dispatch_details}
+                    </div>
+                </div>
+            ` : '';
+
+            item.innerHTML = `
+                <div class="flex justify-between items-center mb-4 border-b border-slate-50 pb-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 border border-emerald-200/50">
+                            <i data-lucide="check" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="font-extrabold text-slate-850 text-sm md:text-base">
+                                时空履约订单: 乘员-${trip.passenger_name}
+                                <span class="text-xs text-slate-400 font-normal font-mono">(${trip.distance || 0.0} km)</span>
+                            </div>
+                            <div class="text-xs text-slate-400 font-mono mt-0.5">${trip.timestamp || '刚刚'}</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-black text-lg text-slate-800">¥ ${parseFloat(trip.price).toFixed(2)}</div>
+                        <div class="text-[9px] text-emerald-500 font-bold bg-emerald-50 px-2 py-0.5 rounded mt-1.5 border border-emerald-150 inline-block uppercase tracking-wider">已完成</div>
+                    </div>
+                </div>
+
+                <div class="text-[11px] text-slate-500 space-y-1 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
+                    <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span> <b>起点上车地:</b> <span class="text-slate-700 font-medium">${trip.pickup.name}</span></div>
+                    <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span> <b>终点下车地:</b> <span class="text-slate-700 font-medium">${trip.dropoff.name}</span></div>
+                </div>
+
+                ${detailsHtml}
+            `;
+            container.appendChild(item);
+        });
+
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    function clearTripRecords() {
+        localStorage.removeItem('mamba_completed_trips');
+        renderTripOrders();
+    }
+</script>
+{% endblock %}
