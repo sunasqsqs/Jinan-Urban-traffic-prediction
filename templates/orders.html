@@ -74,7 +74,44 @@
     });
 
     function renderTrips() {
+        // 先异步拉取服务端数据，再渲染
+        loadAndRenderTrips();
+    }
+
+    async function loadAndRenderTrips() {
         let trips = [];
+        let serverTrips = [];
+
+        // ===== 从服务端拉取当前司机的行程（含付款状态）=====
+        if (currentUserType === 'driver') {
+            try {
+                const tokenStr = localStorage.getItem('mamba_auth_token') || sessionStorage.getItem('mamba_auth_token');
+                if (tokenStr) {
+                    const user = JSON.parse(tokenStr);
+                    const driverId = user.id || user.username || '';
+                    if (driverId) {
+                        const res = await fetch('/api/driver/trips?driver_id=' + encodeURIComponent(driverId));
+                        const data = await res.json();
+                        if (data.success && data.trips) {
+                            serverTrips = data.trips.map(function(t) {
+                                return {
+                                    id: t.id,
+                                    passenger_name: t.passenger_name || '乘客',
+                                    driver_name: t.driver_name || '',
+                                    pickup: t.pickup || {},
+                                    dropoff: t.dropoff || {},
+                                    price: t.price || 0,
+                                    distance: t.distance || 0,
+                                    timestamp: t.created_at ? new Date(t.created_at * 1000).toISOString().replace('T',' ').substring(0,19) : '',
+                                    status: t.status || 'completed',
+                                    paid: t.paid === true || t.paid === false ? t.paid : undefined
+                                };
+                            });
+                        }
+                    }
+                }
+            } catch(e) { console.error('获取服务端行程失败:', e); }
+        }
 
         if (currentUserRole === 'admin' || currentUserRole === 'super') {
             // 管理员/高级会员：查看所有行程，合并去重
@@ -94,17 +131,33 @@
                 if (!seen[t.id]) { seen[t.id] = true; trips.push(t); }
             });
         } else if (currentUserType === 'driver') {
-            // 司机：只看司机行程
+            // 司机：合并 localStorage + 服务端数据（服务端 paid 状态优先）
+            let localTrips = [];
             try {
-                trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
+                localTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
             } catch(e) {}
-            // 按 ID 去重
+            // 去重
             const seen = {};
-            const deduped = [];
-            trips.forEach(function(t) {
-                if (!seen[t.id]) { seen[t.id] = true; deduped.push(t); }
+            // 先加入服务端数据（有权威 paid 状态）
+            serverTrips.forEach(function(t) {
+                seen[t.id] = true;
+                trips.push(t);
             });
-            trips = deduped;
+            // 再加入本地数据（如果服务端没有）
+            localTrips.forEach(function(t) {
+                if (!seen[t.id]) {
+                    seen[t.id] = true;
+                    trips.push(t);
+                }
+            });
+            // 用服务端 paid 状态覆盖本地
+            var serverPaidMap = {};
+            serverTrips.forEach(function(t) {
+                if (t.paid !== undefined) serverPaidMap[t.id] = t.paid;
+            });
+            trips.forEach(function(t) {
+                if (serverPaidMap[t.id] !== undefined) t.paid = serverPaidMap[t.id];
+            });
         } else {
             // 乘客：只看乘客行程
             try {
@@ -219,5 +272,21 @@
             renderTrips();
         }
     }
+
+    // 跨标签页同步：乘客付款后本页面即时刷新
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'mamba_trip_sync' && e.newValue) {
+            try {
+                var msg = JSON.parse(e.newValue);
+                if (msg.action === 'payment_confirmed' || msg.action === 'earnings_confirmed') {
+                    renderTrips();
+                }
+            } catch(er) {}
+        }
+        // 追踪 mamba_completed_trips 的变更
+        if (e.key === 'mamba_completed_trips') {
+            renderTrips();
+        }
+    });
 </script>
 {% endblock %}

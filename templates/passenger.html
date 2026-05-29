@@ -1017,41 +1017,55 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></span>支付中...';
 
-        // 保存/更新行程记录（标记已付款）
-        var trips = [];
-        try { trips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
-        var found = trips.filter(function(t) { return t.id === activeTrip.id; });
-        if (found.length > 0) {
-            // 司机已自动写入，更新为已付款
-            found.forEach(function(t) { t.paid = true; });
-        } else {
-            // 新写入
-            trips.unshift({
-                id: activeTrip.id,
-                passenger_name: activeTrip.passenger_name || passengerName,
-                driver_name: activeTrip.driver_name || '司机',
-                pickup: activeTrip.pickup,
-                dropoff: activeTrip.dropoff,
-                price: activeTrip.price,
-                distance: activeTrip.distance,
-                timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
-                status: 'completed',
-                paid: true
+        // 先调用服务端支付接口
+        fetch('/api/trips/' + activeTrip.id + '/pay', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function() {
+                // 服务端已标记付款，同步更新本地记录
+                // 保存/更新乘客行程记录
+                var trips = [];
+                try { trips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
+                var found = trips.filter(function(t) { return t.id === activeTrip.id; });
+                if (found.length > 0) {
+                    found.forEach(function(t) { t.paid = true; });
+                } else {
+                    trips.unshift({
+                        id: activeTrip.id,
+                        passenger_name: activeTrip.passenger_name || passengerName,
+                        driver_name: activeTrip.driver_name || '司机',
+                        pickup: activeTrip.pickup,
+                        dropoff: activeTrip.dropoff,
+                        price: activeTrip.price,
+                        distance: activeTrip.distance,
+                        timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
+                        status: 'completed',
+                        paid: true
+                    });
+                }
+                localStorage.setItem('mamba_passenger_trips', JSON.stringify(trips));
+
+                // 同步更新司机端本地记录
+                var dTrips = [];
+                try { dTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
+                dTrips.forEach(function(t) { if (t.id === activeTrip.id) t.paid = true; });
+                localStorage.setItem('mamba_completed_trips', JSON.stringify(dTrips));
+
+                // 跨标签页通知：行程已付款
+                localStorage.setItem('mamba_trip_sync', JSON.stringify({
+                    action: 'payment_confirmed',
+                    tripId: activeTrip.id,
+                    timestamp: Date.now()
+                }));
+
+                btn.innerHTML = '✅ 支付成功';
+                btn.className = 'w-full py-3.5 bg-emerald-600 text-white font-extrabold rounded-xl text-sm transition shadow-lg';
+
+                setTimeout(function() { resetBooking(); }, 1500);
+            }).catch(function() {
+                btn.innerHTML = '支付失败 · 点击重试';
+                btn.disabled = false;
+                btn.className = 'w-full py-3.5 bg-rose-500 hover:bg-rose-600 text-white font-extrabold rounded-xl text-sm transition shadow-lg';
             });
-        }
-        localStorage.setItem('mamba_passenger_trips', JSON.stringify(trips));
-
-        // 同步更新司机端的记录
-        var dTrips = [];
-        try { dTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
-        dTrips.forEach(function(t) { if (t.id === activeTrip.id) t.paid = true; });
-        localStorage.setItem('mamba_completed_trips', JSON.stringify(dTrips));
-
-        // 短暂显示支付成功
-        btn.innerHTML = '✅ 支付成功';
-        btn.className = 'w-full py-3.5 bg-emerald-600 text-white font-extrabold rounded-xl text-sm transition shadow-lg';
-
-        setTimeout(function() { resetBooking(); }, 1500);
     }
 
     function startTripPolling() {

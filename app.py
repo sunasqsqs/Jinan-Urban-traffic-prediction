@@ -509,8 +509,32 @@ def update_trip_status(trip_id):
 
         if new_status == "completed" and trip["driver_id"] in TAXI_DRIVERS:
             TAXI_DRIVERS[trip["driver_id"]]["status"] = "online"
+        if new_status == "completed":
+            trip["paid"] = False  # 初始标记为未付款
 
         return jsonify({"success": True, "trip": trip})
+
+# 5.7 乘客付款确认
+@app.route('/api/trips/<trip_id>/pay', methods=['POST'])
+def pay_trip(trip_id):
+    with taxi_state_lock:
+        trip = TAXI_TRIPS.get(trip_id)
+        if not trip:
+            return jsonify({"success": False, "message": "未找到指定行程"}), 404
+        trip["paid"] = True
+        trip["paid_at"] = time.time()
+        return jsonify({"success": True, "trip": trip})
+
+# 5.8 司机查询已完成的行程（含付款状态）
+@app.route('/api/driver/trips', methods=['GET'])
+def get_driver_trips():
+    driver_id = request.args.get("driver_id", "")
+    if not driver_id:
+        return jsonify({"success": False, "trips": []})
+    with taxi_state_lock:
+        trips = [t for t in TAXI_TRIPS.values()
+                 if t.get("driver_id") == driver_id]
+    return jsonify({"success": True, "trips": trips})
 
 # 5.7 车载实时在线即时通信
 @app.route('/api/trips/<trip_id>/chat', methods=['POST'])
