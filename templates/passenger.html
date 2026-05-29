@@ -1,0 +1,1181 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+
+<style>
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+    #passengerMap {
+        height: 420px;
+        width: 100%;
+        border-radius: 14px;
+        border: 1px solid #e2e8f0;
+    }
+    .leaflet-container { border-radius: 14px; }
+    .fuzzy-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 50;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    @media (max-width: 640px) {
+        #passengerMap { height: 260px; border-radius: 10px; }
+        .leaflet-container { border-radius: 10px; }
+        /* 移动端表单全宽 + 大触摸目标 */
+        #booking-panel, #trip-status-card, #checkout-card { border-radius: 12px; }
+        #booking-panel input, #booking-panel button,
+        #trip-status-card button, #checkout-card button {
+            font-size: 14px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+        }
+        /* 估算框紧凑布局 */
+        #estimate-box { padding: 10px; }
+        /* 头部标题缩小 */
+        h3 { font-size: 1.25rem !important; line-height: 1.3 !important; }
+        /* 下拉菜单高度限制 */
+        .fuzzy-dropdown { max-height: 160px; }
+    }
+</style>
+
+<div class="space-y-6 pb-12">
+
+    <!-- 头部：与其他页面统一的大标题风格 -->
+    <div class="mb-6 border-b border-gray-200 pb-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-600 text-xs font-mono mb-3">
+            <span class="w-2 h-2 rounded-full bg-cyan-500 animate-pulse"></span>
+            RIDE HAILING TERMINAL
+        </div>
+        <h3 class="text-3xl font-bold text-gray-800 tech-font mb-2">济南市网约车 · 打车出行</h3>
+        <p class="text-gray-500 text-sm">
+            输入目的地，系统将根据距离、需求预测和价格自动为您匹配最优司机。
+            <br><span class="text-cyan-500 font-mono tracking-wide font-semibold">* GPS 已启用：上车点默认为您当前的真实位置，也可在地图上点击修改。</span>
+        </p>
+        <!-- 管理员/高级会员 只读提示 -->
+        <div id="readonly-banner" class="hidden mt-3 bg-amber-50 border border-amber-300 rounded-lg px-4 py-2.5 flex items-center gap-2">
+            <span class="text-amber-500 text-lg">⚠️</span>
+            <div>
+                <span class="text-amber-700 text-xs font-bold">只读模式</span>
+                <span class="text-amber-600 text-xs ml-2">您当前以管理员/高级会员身份查看，无法进行叫车操作。请使用普通乘客账号登录以打车。</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex items-center justify-between bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-sm lg:hidden">
+        <div>
+            <h3 class="font-bold text-slate-800 text-sm" id="passenger-name-mobile">泉城旅客</h3>
+            <p class="text-[10px] text-slate-400">要去哪里?</p>
+        </div>
+        <div class="text-right">
+            <div class="text-[10px] text-slate-400">附近空闲</div>
+            <div class="text-lg sm:text-xl font-black text-cyan-600" id="nearby-count-mobile">--</div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- 左侧地图 -->
+        <div class="lg:col-span-7">
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div id="passengerMap"></div>
+            </div>
+            <div class="flex items-center justify-between mt-2 text-[10px] text-slate-400">
+                <span class="flex items-center gap-1"><i data-lucide="mouse-pointer-click" class="w-3 h-3"></i> 点击地图可重新设定上车点</span>
+                <span class="flex items-center gap-1" id="gps-indicator">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> GPS 定位中...
+                </span>
+            </div>
+        </div>
+
+        <!-- 右侧面板 -->
+        <div class="lg:col-span-5 space-y-4">
+
+            <!-- 叫车表单 -->
+            <div id="booking-panel" class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm border-t-4 border-t-cyan-500">
+                <div class="flex items-center justify-between mb-4">
+                    <h4 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        <i data-lucide="map-pin" class="w-4 h-4 text-cyan-500"></i>预约行程
+                    </h4>
+                    <div class="text-right hidden lg:block">
+                        <span class="text-[10px] text-slate-400">附近空闲</span>
+                        <span class="text-lg font-black text-cyan-600 ml-1" id="nearby-count">--</span>
+                        <span class="text-[10px] text-slate-400">辆</span>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    <!-- 上车点 —— 模糊搜索输入框 -->
+                    <div class="relative">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">上车地点 <span class="text-cyan-500">(输入搜索)</span></label>
+                        <div class="flex gap-2">
+                            <div class="relative flex-1">
+                                <input type="text" id="pickup-input"
+                                    class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-700 focus:border-cyan-500 focus:outline-none transition"
+                                    placeholder="点击输入搜索上车地点..."
+                                    value=""
+                                    autocomplete="off"
+                                    onfocus="onPickupFocus()"
+                                    oninput="onPickupInput()"
+                                    onblur="onPickupBlur()">
+                                <input type="hidden" id="pickup-hidden" value="current">
+                                <div id="pickup-fuzzy-dropdown" class="fuzzy-dropdown hidden bg-white border border-slate-200 rounded-lg shadow-xl mt-1"></div>
+                            </div>
+                            <button onclick="useCurrentLocation()" id="gps-pickup-btn"
+                                class="shrink-0 px-3 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-xs transition shadow-sm flex items-center gap-1.5"
+                                title="使用 GPS 当前位置">
+                                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 当前位置
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 目的地 —— 模糊搜索输入框 -->
+                    <div class="relative">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">目的地 <span class="text-cyan-500">(输入搜索)</span></label>
+                        <input type="text" id="dropoff-input"
+                            class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-700 focus:border-cyan-500 focus:outline-none transition"
+                            placeholder="输入目的地名称进行搜索..."
+                            autocomplete="off"
+                            oninput="onDropoffInput()"
+                            onfocus="onDropoffInput()">
+                        <input type="hidden" id="dropoff-hidden" value="">
+                        <div id="fuzzy-dropdown" class="fuzzy-dropdown hidden bg-white border border-slate-200 rounded-lg shadow-xl mt-1"></div>
+                    </div>
+
+                    <!-- 预估 -->
+                    <div id="estimate-box" class="hidden bg-slate-50 rounded-xl p-3.5 space-y-2 text-xs">
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">预估距离</span>
+                            <span class="font-bold text-slate-700" id="est-dist">-- km</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">预计时间</span>
+                            <span class="font-bold text-slate-700" id="est-duration">-- 分钟</span>
+                        </div>
+                        <div class="flex justify-between border-t border-slate-200 pt-2">
+                            <span class="text-slate-500">预估费用</span>
+                            <span class="text-xl font-black text-amber-600" id="est-price">¥ --</span>
+                        </div>
+                    </div>
+
+                    <button onclick="callTaxi()" id="call-btn" class="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-extrabold rounded-xl text-sm transition shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                        <i data-lucide="car" class="w-4 h-4"></i> 立即叫车
+                    </button>
+                </div>
+            </div>
+
+            <!-- 行程状态 -->
+            <div id="trip-status-card" class="hidden bg-white rounded-2xl border-2 border-cyan-400 p-5 shadow-lg">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse"></span>
+                    <h4 class="font-bold text-slate-800 text-sm" id="trip-status-title">正在叫车...</h4>
+                </div>
+                <!-- 司机信息卡片 -->
+                <div id="trip-driver-card" class="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-xl p-4 mb-3 border border-cyan-200">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 bg-cyan-500 rounded-full flex items-center justify-center text-white text-xl font-bold shadow">🚕</div>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-extrabold text-slate-800 text-base" id="trip-driver">自动匹配中...</div>
+                            <div class="text-xs text-slate-500 mt-0.5" id="trip-driver-vehicle">--</div>
+                            <div class="flex items-center gap-1 mt-1">
+                                <span class="text-amber-400 text-xs" id="trip-driver-stars">☆☆☆☆☆</span>
+                                <span class="text-xs text-slate-400 ml-1" id="trip-driver-rating">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-2 text-xs sm:text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">上车点</span>
+                        <span class="text-right text-slate-700" id="trip-pickup">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">目的地</span>
+                        <span class="text-right text-slate-700" id="trip-dropoff">--</span>
+                    </div>
+                    <div class="flex justify-between border-t border-slate-100 pt-2">
+                        <span class="text-slate-500">费用</span>
+                        <span class="text-lg font-black text-amber-600" id="trip-price">¥ --</span>
+                    </div>
+                </div>
+                <button onclick="cancelTrip()" class="w-full mt-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-lg text-xs transition">
+                    取消行程
+                </button>
+            </div>
+
+            <!-- 结账确认卡（到达目的地后显示） -->
+            <div id="checkout-card" class="hidden bg-white rounded-2xl border-2 border-emerald-400 p-5 shadow-lg">
+                <div class="text-center mb-4">
+                    <div class="text-3xl mb-2">🎉</div>
+                    <h4 class="font-bold text-slate-800 text-base">行程已到达</h4>
+                    <p class="text-xs text-slate-400 mt-1" id="checkout-route">--</p>
+                </div>
+                <div class="space-y-2.5 text-xs sm:text-sm bg-slate-50 rounded-xl p-4 mb-4">
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">司机</span>
+                        <span class="font-bold text-slate-800" id="checkout-driver">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">车辆</span>
+                        <span class="text-slate-600 font-mono text-xs" id="checkout-vehicle">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">评分</span>
+                        <span class="text-amber-500 text-xs" id="checkout-stars">☆☆☆☆☆</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">里程</span>
+                        <span class="font-bold text-slate-700" id="checkout-distance">-- km</span>
+                    </div>
+                    <div class="flex justify-between border-t border-slate-200 pt-2.5 mt-1">
+                        <span class="text-slate-500 font-bold text-sm">应付金额</span>
+                        <span class="text-2xl font-black text-amber-600" id="checkout-price">¥ --</span>
+                    </div>
+                </div>
+                <button onclick="confirmPayment()" id="checkout-pay-btn" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold rounded-xl text-sm transition shadow-lg shadow-emerald-500/20">
+                    确认支付
+                </button>
+                <p class="text-center text-[10px] text-slate-400 mt-3">支付后将自动保存行程记录</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let passengerId = 'passenger_' + Math.floor(Math.random() * 100000);
+    let passengerName = '泉城旅客';
+    let passengerPosition = { lng: 117.024967, lat: 36.661156 };
+    let selectedPickup = null;
+    let selectedDropoff = null;
+    let activeTrip = null;
+    let activeTripId = null;
+    let map = null;
+    let userMarker = null;
+    let driverMarkers = [];
+    let tripPollTimer = null;
+    let gpsWatchId = null;
+    let gpsLocated = false;
+
+    const JINAN_LANDMARKS = [
+        // ===== 交通枢纽 =====
+        {"id":"jinan_railway","name":"济南火车站","lng":116.985831,"lat":36.669825,"aliases":["济南站","火车站","济南火车站"]},
+        {"id":"jinan_west","name":"济南西站 (高铁站)","lng":116.886368,"lat":36.668102,"aliases":["济南西站","高铁站","西站","济南西"]},
+        {"id":"jinan_east","name":"济南东站","lng":117.150333,"lat":36.748333,"aliases":["济南东站","东站","济南东"]},
+        {"id":"daminghu_station","name":"大明湖站","lng":117.028889,"lat":36.679722,"aliases":["大明湖站","大明湖火车站"]},
+        {"id":"yaoqiang_airport","name":"遥墙国际机场","lng":117.265531,"lat":36.850785,"aliases":["遥墙机场","济南机场","机场","遥墙"]},
+        {"id":"jinan_bus_station","name":"济南长途汽车总站","lng":116.994444,"lat":36.683889,"aliases":["长途汽车总站","汽车总站","长途汽车站","汽车站"]},
+        {"id":"jinan_east_bus","name":"济南长途汽车东站","lng":117.068889,"lat":36.680556,"aliases":["汽车东站","长途东站"]},
+        {"id":"jinan_west_bus","name":"济南长途汽车西站","lng":116.886667,"lat":36.665000,"aliases":["汽车西站","长途西站"]},
+
+        // ===== 商圈购物 =====
+        {"id":"quancheng_sq","name":"泉城广场","lng":117.024967,"lat":36.661156,"aliases":["泉城广场","泉广","市中心","泉城路"]},
+        {"id":"wanda_weijiazhuang","name":"魏家庄万达广场","lng":117.008333,"lat":36.665833,"aliases":["魏家庄万达","经四路万达","万达广场","万达"]},
+        {"id":"gaoxin_wanda","name":"高新区万达广场","lng":117.135235,"lat":36.673891,"aliases":["高新区万达","高新万达","万达"]},
+        {"id":"rongchuang_mall","name":"融创茂","lng":117.195000,"lat":36.643333,"aliases":["融创茂","融创文旅城","文旅城"]},
+        {"id":"vientiane_city","name":"万象城","lng":117.098611,"lat":36.653056,"aliases":["万象城","经十路万象城"]},
+        {"id":"hanglung","name":"恒隆广场","lng":117.022500,"lat":36.660833,"aliases":["恒隆广场","恒隆","泉城路恒隆"]},
+        {"id":"shimao","name":"世茂国际广场","lng":117.028056,"lat":36.661667,"aliases":["世茂广场","世茂","世茂国际广场"]},
+        {"id":"yinzuo","name":"银座商城 (泺源大街)","lng":117.031389,"lat":36.658889,"aliases":["银座商城","银座","泺源大街银座"]},
+        {"id":"guihe","name":"贵和购物中心","lng":117.023889,"lat":36.661667,"aliases":["贵和","贵和购物","贵和购物中心"]},
+        {"id":"wuyue_plaza","name":"吾悦广场","lng":117.120556,"lat":36.681667,"aliases":["吾悦广场","吾悦","历下吾悦"]},
+        {"id":"hexie_plaza","name":"和谐广场","lng":116.984722,"lat":36.653333,"aliases":["和谐广场","和谐"]},
+        {"id":"liancheng","name":"连城广场","lng":116.973611,"lat":36.656389,"aliases":["连城广场","连城"]},
+        {"id":"wanda_high_speed","name":"高铁西站万达广场","lng":116.885000,"lat":36.670000,"aliases":["西站万达","高铁万达"]},
+        {"id":"qingdao_road_market","name":"青岛路商业街","lng":116.855000,"lat":36.675000,"aliases":["青岛路","青岛路商圈"]},
+
+        // ===== 旅游景点 =====
+        {"id":"baotu_spring","name":"趵突泉公园","lng":117.015577,"lat":36.660634,"aliases":["趵突泉","趵突泉公园","趵突泉景区"]},
+        {"id":"daming_lake","name":"大明湖风景区","lng":117.025354,"lat":36.672957,"aliases":["大明湖","大明湖公园","大明湖景区"]},
+        {"id":"qianfoshan","name":"千佛山风景名胜区","lng":117.032649,"lat":36.638531,"aliases":["千佛山","千佛山公园","千佛山景区"]},
+        {"id":"quancheng_park","name":"泉城公园","lng":117.031667,"lat":36.647222,"aliases":["泉城公园","植物园"]},
+        {"id":"furong_street","name":"芙蓉街","lng":117.024167,"lat":36.664167,"aliases":["芙蓉街","芙蓉街小吃"]},
+        {"id":"heihu_spring","name":"黑虎泉","lng":117.031667,"lat":36.660000,"aliases":["黑虎泉","黑虎泉公园"]},
+        {"id":"wulongtan","name":"五龙潭公园","lng":117.017778,"lat":36.663889,"aliases":["五龙潭","五龙潭公园"]},
+        {"id":"hongjialou_church","name":"洪家楼天主教堂","lng":117.063889,"lat":36.683333,"aliases":["洪家楼教堂","洪楼教堂","洪家楼天主教堂"]},
+        {"id":"baimaishan","name":"百脉泉公园","lng":117.538611,"lat":36.712778,"aliases":["百脉泉","百脉泉公园"]},
+        {"id":"jiurushan","name":"九如山瀑布群","lng":117.283333,"lat":36.483333,"aliases":["九如山","九如山瀑布"]},
+        {"id":"hongyegu","name":"红叶谷","lng":117.131389,"lat":36.482222,"aliases":["红叶谷","红叶谷景区"]},
+        {"id":"paomaling","name":"跑马岭野生动物世界","lng":117.101667,"lat":36.438333,"aliases":["跑马岭","跑马岭野生动物园"]},
+        {"id":"shandong_museum","name":"山东博物馆","lng":117.086389,"lat":36.660833,"aliases":["山东博物馆","省博物馆","省博"]},
+        {"id":"shandong_art_museum","name":"山东美术馆","lng":117.088611,"lat":36.659444,"aliases":["山东美术馆","省美术馆"]},
+        {"id":"jinan_museum","name":"济南市博物馆","lng":117.028889,"lat":36.643889,"aliases":["济南市博物馆","市博物馆"]},
+        {"id":"jinan_zoo","name":"济南动物园","lng":116.981111,"lat":36.697500,"aliases":["济南动物园","动物园","金牛公园"]},
+        {"id":"fangte","name":"济南方特东方神画","lng":116.805000,"lat":36.703333,"aliases":["方特","方特东方神画","东方神画"]},
+        {"id":"huashan_lake","name":"华山湖公园","lng":117.073889,"lat":36.716667,"aliases":["华山湖","华山湖公园","华山公园"]},
+        {"id":"xiuyuan_river","name":"绣源河风景区","lng":117.485000,"lat":36.681667,"aliases":["绣源河","绣源河景区"]},
+
+        // ===== 高校学府 =====
+        {"id":"shandong_university","name":"山东大学中心校区","lng":117.055278,"lat":36.675833,"aliases":["山东大学","山大","山大中心校区"]},
+        {"id":"shandong_university_baotuquan","name":"山东大学趵突泉校区","lng":117.018333,"lat":36.651667,"aliases":["山大趵突泉校区","山大西校","山医"]},
+        {"id":"shandong_university_qianfoshan","name":"山东大学千佛山校区","lng":117.042500,"lat":36.648333,"aliases":["山大千佛山校区","山工"]},
+        {"id":"shandong_university_hongjialou","name":"山东大学洪家楼校区","lng":117.061667,"lat":36.682500,"aliases":["山大洪家楼校区","山大老校"]},
+        {"id":"shandong_university_software","name":"山东大学软件园校区","lng":117.146389,"lat":36.666944,"aliases":["山大软件园","山大软件园校区","齐鲁软件园"]},
+        {"id":"shandong_university_xinglongshan","name":"山东大学兴隆山校区","lng":117.069444,"lat":36.599722,"aliases":["山大兴隆山校区","兴隆山校区"]},
+        {"id":"jinan_university","name":"济南大学主校区","lng":116.961667,"lat":36.614444,"aliases":["济南大学","济大","济南大学主校区"]},
+        {"id":"shandong_normal","name":"山东师范大学千佛山校区","lng":117.040000,"lat":36.650833,"aliases":["山东师范大学","山师","山师大"]},
+        {"id":"shandong_normal_changqing","name":"山东师范大学长清湖校区","lng":116.812500,"lat":36.543333,"aliases":["山师长清校区","山师长清湖"]},
+        {"id":"qilu_tech","name":"齐鲁工业大学长清校区","lng":116.788889,"lat":36.555278,"aliases":["齐鲁工业大学","齐鲁工大","齐工大"]},
+        {"id":"shandong_caiing","name":"山东财经大学舜耕校区","lng":117.030278,"lat":36.635833,"aliases":["山东财经大学","山财","山财大","山财舜耕"]},
+        {"id":"shandong_caiing_yanshan","name":"山东财经大学燕山校区","lng":117.112500,"lat":36.663889,"aliases":["山财燕山校区","山财燕山"]},
+        {"id":"shandong_jianzhu","name":"山东建筑大学","lng":117.178333,"lat":36.683611,"aliases":["山东建筑大学","山建","山建大"]},
+        {"id":"shandong_jiaotong","name":"山东交通学院长清校区","lng":116.796667,"lat":36.561111,"aliases":["山东交通学院","山交","山东交通学院长清"]},
+        {"id":"shandong_art","name":"山东艺术学院长清校区","lng":116.810278,"lat":36.546944,"aliases":["山东艺术学院","山艺"]},
+
+        // ===== 医疗机构 =====
+        {"id":"qilu_hospital","name":"齐鲁医院","lng":117.020000,"lat":36.655278,"aliases":["齐鲁医院","山东大学齐鲁医院"]},
+        {"id":"provincial_hospital","name":"山东省立医院中心院区","lng":116.991389,"lat":36.662222,"aliases":["省立医院","山东省立医院","省立"]},
+        {"id":"provincial_hospital_east","name":"山东省立医院东院区","lng":117.127778,"lat":36.664722,"aliases":["省立东院","省立医院东院"]},
+        {"id":"qianfoshan_hospital","name":"千佛山医院","lng":117.048611,"lat":36.646389,"aliases":["千佛山医院","千医"]},
+        {"id":"jinan_central_hospital","name":"济南市中心医院","lng":117.052778,"lat":36.667500,"aliases":["济南市中心医院","市中心医院","中心医院"]},
+        {"id":"second_hospital_shandong","name":"山大二院","lng":117.026389,"lat":36.700278,"aliases":["山大二院","山大第二医院"]},
+        {"id":"provincial_tcm","name":"山东省中医院东院区","lng":117.048056,"lat":36.651111,"aliases":["省中医","山东省中医院","省中医院"]},
+        {"id":"jinan_children_hospital","name":"济南市儿童医院","lng":116.985000,"lat":36.658889,"aliases":["儿童医院","济南儿童医院"]},
+        {"id":"jinan_maternal","name":"济南市妇幼保健院","lng":117.007500,"lat":36.661389,"aliases":["妇幼保健院","市妇幼"]},
+        {"id":"jinan_fourth_hospital","name":"济南市第四人民医院","lng":116.997500,"lat":36.693056,"aliases":["济南四院","市四院","第四人民医院"]},
+        {"id":"jinan_third_hospital","name":"济南市第三人民医院","lng":117.157500,"lat":36.701389,"aliases":["济南三院","市三院","第三人民医院"]},
+        {"id":"shandong_cancer","name":"山东省肿瘤医院","lng":116.859444,"lat":36.634167,"aliases":["省肿瘤医院","肿瘤医院"]},
+        {"id":"jinan_stomatology","name":"济南市口腔医院","lng":117.018889,"lat":36.664444,"aliases":["口腔医院","市口腔医院"]},
+
+        // ===== 行政与公共设施 =====
+        {"id":"shandong_gov","name":"山东省人民政府","lng":117.023611,"lat":36.652500,"aliases":["省政府","山东省政府"]},
+        {"id":"jinan_gov","name":"济南市人民政府","lng":117.019444,"lat":36.656111,"aliases":["市政府","济南市政府"]},
+        {"id":"jinan_public_security","name":"济南市公安局","lng":117.014167,"lat":36.663889,"aliases":["公安局","济南市公安局"]},
+        {"id":"shandong_library","name":"山东省图书馆","lng":117.076389,"lat":36.676111,"aliases":["省图书馆","省图","山东省图书馆"]},
+        {"id":"jinan_library","name":"济南市图书馆新馆","lng":116.883056,"lat":36.676389,"aliases":["济南市图书馆","市图书馆","市图"]},
+        {"id":"jinan_intl_convention","name":"济南国际会展中心","lng":117.120278,"lat":36.675000,"aliases":["国际会展中心","会展中心","济南国际会展中心"]},
+        {"id":"shandong_intl_convention","name":"山东国际会展中心","lng":116.873056,"lat":36.676389,"aliases":["山东国际会展中心","西城会展"]},
+        {"id":"aoti_center","name":"济南奥体中心","lng":117.122500,"lat":36.657222,"aliases":["奥体中心","奥体","奥体中心体育场","东荷西柳"]},
+
+        // ===== 酒店住宿 =====
+        {"id":"hyatt_jinan","name":"济南凯悦酒店","lng":117.021667,"lat":36.660556,"aliases":["凯悦酒店","凯悦","济南凯悦"]},
+        {"id":"hilton_jinan","name":"济南鲁能希尔顿酒店","lng":117.029722,"lat":36.630556,"aliases":["希尔顿","希尔顿酒店","鲁能希尔顿"]},
+        {"id":"intercon_jinan","name":"济南鲁能贵和洲际酒店","lng":117.023056,"lat":36.661389,"aliases":["洲际酒店","贵和洲际","洲际"]},
+        {"id":"sheraton_jinan","name":"济南喜来登酒店","lng":117.121667,"lat":36.664167,"aliases":["喜来登","喜来登酒店","济南喜来登"]},
+        {"id":"shandong_hotel","name":"山东大厦","lng":117.033889,"lat":36.644722,"aliases":["山东大厦","山东宾馆"]},
+        {"id":"nanjiao_hotel","name":"南郊宾馆","lng":117.032778,"lat":36.643889,"aliases":["南郊宾馆","南郊"]},
+        {"id":"silver_plaza_hotel","name":"银座索菲特大酒店","lng":117.031667,"lat":36.658889,"aliases":["索菲特大酒店","索菲特","银座索菲特"]},
+        {"id":"quancheng_hotel","name":"泉城大酒店","lng":117.028056,"lat":36.660000,"aliases":["泉城大酒店","泉城酒店"]},
+        {"id":"jinan_marco_polo","name":"济南绿地美利亚酒店","lng":116.887222,"lat":36.668889,"aliases":["美利亚酒店","绿地美利亚"]},
+
+        // ===== 住宅与商务区 =====
+        {"id":"lixia_district","name":"历下区核心商圈","lng":117.033333,"lat":36.666667,"aliases":["历下区","历下","历下商圈","历下核心"]},
+        {"id":"shizhong_district","name":"市中区核心商圈","lng":117.000000,"lat":36.650000,"aliases":["市中区","市中","市中商圈","市中核心"]},
+        {"id":"huaiyin_district","name":"槐荫区核心商圈","lng":116.933333,"lat":36.650000,"aliases":["槐荫区","槐荫","槐荫商圈"]},
+        {"id":"tianqiao_district","name":"天桥区核心商圈","lng":116.983333,"lat":36.683333,"aliases":["天桥区","天桥","天桥商圈"]},
+        {"id":"licheng_district","name":"历城区核心商圈","lng":117.083333,"lat":36.683333,"aliases":["历城区","历城","历城商圈"]},
+        {"id":"changqing_district","name":"长清区大学城","lng":116.800000,"lat":36.550000,"aliases":["长清区","长清","长清大学城","大学城"]},
+        {"id":"zhangqiu_district","name":"章丘区核心商圈","lng":117.533333,"lat":36.700000,"aliases":["章丘区","章丘","章丘商圈"]},
+        {"id":"laiwu_district","name":"莱芜区核心商圈","lng":117.683333,"lat":36.216667,"aliases":["莱芜区","莱芜","莱芜商圈"]},
+        {"id":"gangcheng_district","name":"钢城区核心商圈","lng":117.833333,"lat":36.050000,"aliases":["钢城区","钢城"]},
+        {"id":"jiyang_district","name":"济阳区核心商圈","lng":117.183333,"lat":36.983333,"aliases":["济阳区","济阳"]},
+
+        // ===== 高新区/开发区 =====
+        {"id":"jinan_high_tech","name":"济南高新区核心区","lng":117.133333,"lat":36.666667,"aliases":["高新区","济南高新区","高新核心区"]},
+        {"id":"qilu_software_park","name":"齐鲁软件园","lng":117.146111,"lat":36.670000,"aliases":["齐鲁软件园","软件园"]},
+        {"id":"hanyu_financial","name":"汉峪金谷","lng":117.142500,"lat":36.645833,"aliases":["汉峪金谷","汉峪","汉峪金融"]},
+        {"id":"jinan_innovation","name":"济南创新谷","lng":116.815278,"lat":36.558889,"aliases":["创新谷","济南创新谷"]},
+        {"id":"jinan_free_trade","name":"济南自贸区核心区","lng":117.150000,"lat":36.680000,"aliases":["自贸区","济南自贸区","自贸试验区"]},
+
+        // ===== 文体场馆 =====
+        {"id":"shandong_gym","name":"山东省体育中心","lng":117.011111,"lat":36.648611,"aliases":["省体育中心","省体","体育中心"]},
+        {"id":"jinan_olympic_gym","name":"济南奥体中心体育馆","lng":117.123333,"lat":36.658889,"aliases":["奥体体育馆","奥体中心体育馆"]},
+        {"id":"shandong_grand_theatre","name":"山东省会大剧院","lng":116.883333,"lat":36.672222,"aliases":["省会大剧院","大剧院","山东省会大剧院"]},
+        {"id":"jinan_grand_theatre","name":"济南市群众艺术馆","lng":116.881944,"lat":36.674444,"aliases":["群众艺术馆","市艺术馆"]},
+
+        // ===== 更多热门地点 =====
+        {"id":"jinan_book_city","name":"济南书城 (山东书城)","lng":117.006111,"lat":36.657222,"aliases":["山东书城","济南书城","书城","新华书店"]},
+        {"id":"huancheng_park","name":"环城公园","lng":117.030556,"lat":36.662222,"aliases":["环城公园","护城河公园"]},
+        {"id":"baihua_park","name":"百花公园","lng":117.063611,"lat":36.672500,"aliases":["百花公园","百花"]},
+        {"id":"zhongshan_park","name":"中山公园","lng":116.994722,"lat":36.664722,"aliases":["中山公园","济南中山公园"]},
+        {"id":"hero_mountain","name":"英雄山风景区","lng":117.004444,"lat":36.638056,"aliases":["英雄山","英雄山公园","英雄山景区"]},
+        {"id":"yellow_river_bridge","name":"黄河大桥 (济南黄河公路大桥)","lng":117.036111,"lat":36.753333,"aliases":["黄河大桥","黄河公路大桥"]},
+        {"id":"jinan_radio_tv","name":"济南广播电视台","lng":117.092778,"lat":36.665000,"aliases":["济南电视台","广播电视台","济南广电"]},
+        {"id":"huanlian_market","name":"环联商贸城夜市","lng":117.095556,"lat":36.694167,"aliases":["环联夜市","环联商贸城","夜市"]},
+        {"id":"hongjialou_square","name":"洪楼广场","lng":117.061745,"lat":36.683056,"aliases":["洪楼广场","洪楼","洪家楼广场"]},
+        {"id":"shungeng_road","name":"舜耕国际会展中心","lng":117.028333,"lat":36.633889,"aliases":["舜耕会展","舜耕路","舜耕国际会展中心"]},
+        {"id":"lingsi_temple","name":"灵岩寺","lng":116.934722,"lat":36.373333,"aliases":["灵岩寺","大灵岩寺"]},
+        {"id":"jinan_botanical","name":"济南植物园","lng":117.443056,"lat":36.615000,"aliases":["济南植物园","章丘植物园"]}
+    ];
+
+    function calcDist(lng1, lat1, lng2, lat2) {
+        const R = 6371;
+        const dLat = (lat2-lat1)*Math.PI/180;
+        const dLng = (lng2-lng1)*Math.PI/180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+        return R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    // ===== 模糊搜索 =====
+    function onDropoffInput() {
+        const input = document.getElementById('dropoff-input');
+        const dropdown = document.getElementById('fuzzy-dropdown');
+        const hidden = document.getElementById('dropoff-hidden');
+        const query = input.value.trim().toLowerCase();
+
+        if (!query) {
+            dropdown.classList.add('hidden');
+            selectedDropoff = null;
+            document.getElementById('estimate-box').classList.add('hidden');
+            return;
+        }
+
+        // 模糊匹配并计算相关度评分
+        var scored = [];
+        JINAN_LANDMARKS.forEach(function(lm) {
+            var score = 0;
+            var matchType = '';
+            var matchText = '';
+
+            // 名称完全匹配
+            if (lm.name === query) { score = 100; matchType = 'exact'; matchText = lm.name; }
+            // 名称以查询开头
+            else if (lm.name.toLowerCase().startsWith(query)) { score = 80; matchType = 'start'; matchText = lm.name; }
+            // 名称包含查询
+            else if (lm.name.toLowerCase().includes(query)) { score = 60; matchType = 'contain'; matchText = lm.name; }
+
+            // 别名匹配
+            if (score === 0 && lm.aliases) {
+                for (var i = 0; i < lm.aliases.length; i++) {
+                    var alias = lm.aliases[i].toLowerCase();
+                    if (alias === query) { score = 90; matchType = 'alias_exact'; matchText = lm.aliases[i]; break; }
+                    else if (alias.startsWith(query)) { score = Math.max(score, 70); matchType = 'alias_start'; matchText = lm.aliases[i]; }
+                    else if (alias.includes(query)) { score = Math.max(score, 50); matchType = 'alias_contain'; matchText = lm.aliases[i]; }
+                }
+            }
+
+            // 拼音/简拼模糊匹配（id包含查询）
+            if (score === 0 && lm.id.toLowerCase().includes(query.replace(/\s+/g, '_'))) {
+                score = 40; matchType = 'id'; matchText = lm.id;
+            }
+
+            // 更宽松的逐字匹配
+            if (score === 0) {
+                var allText = (lm.name + ' ' + (lm.aliases || []).join(' ')).toLowerCase();
+                var chars = query.split('');
+                var allMatch = chars.every(function(c) { return allText.includes(c); });
+                if (allMatch && query.length >= 2) { score = 30; matchType = 'fuzzy'; matchText = lm.name; }
+            }
+
+            if (score > 0) {
+                scored.push({ lm: lm, score: score, matchType: matchType, matchText: matchText });
+            }
+        });
+
+        // 按评分降序排列，最多显示15条
+        scored.sort(function(a, b) { return b.score - a.score; });
+        var topResults = scored.slice(0, 15);
+
+        if (topResults.length === 0) {
+            dropdown.innerHTML = '<div class="p-3 text-xs text-slate-400 text-center">未找到匹配地点 "<b>' + query + '</b>"，请尝试其他关键词</div>';
+            dropdown.classList.remove('hidden');
+            return;
+        }
+
+        dropdown.innerHTML = '';
+        topResults.forEach(function(item) {
+            var lm = item.lm;
+            var nameHtml = highlightMatch(lm.name, query);
+            var div = document.createElement('div');
+            div.className = 'px-3 py-2.5 hover:bg-cyan-50 cursor-pointer border-b border-slate-50 last:border-b-0 flex items-center gap-2.5 text-sm transition';
+            div.innerHTML = '<span class="text-base shrink-0">📍</span><div class="flex flex-col"><span class="text-slate-700 font-medium">' + nameHtml + '</span><span class="text-[10px] text-slate-400">' + getCategoryLabel(lm.id) + '</span></div>';
+            div.onmousedown = function(e) { e.preventDefault(); };
+            div.onclick = function() {
+                input.value = lm.name;
+                hidden.value = lm.id;
+                dropdown.classList.add('hidden');
+                selectedDropoff = { name: lm.name, lng: lm.lng, lat: lm.lat };
+                updateEstimate();
+            };
+            dropdown.appendChild(div);
+        });
+
+        dropdown.classList.remove('hidden');
+
+        // 点击外部关闭下拉
+        document.addEventListener('click', function closeDropdown(e) {
+            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.add('hidden');
+                document.removeEventListener('click', closeDropdown);
+            }
+        });
+    }
+
+    function highlightMatch(text, query) {
+        var idx = text.toLowerCase().indexOf(query.toLowerCase());
+        if (idx >= 0) {
+            return text.substring(0, idx) + '<b class="text-cyan-600">' + text.substring(idx, idx + query.length) + '</b>' + text.substring(idx + query.length);
+        }
+        return text;
+    }
+
+    function getCategoryLabel(id) {
+        var transport = ['jinan_railway','jinan_west','jinan_east','daminghu_station','yaoqiang_airport','jinan_bus_station','jinan_east_bus','jinan_west_bus'];
+        var shopping = ['wanda_weijiazhuang','gaoxin_wanda','rongchuang_mall','vientiane_city','hanglung','shimao','yinzuo','guihe','wuyue_plaza','hexie_plaza','liancheng','wanda_high_speed','qingdao_road_market'];
+        var tourism = ['baotu_spring','daming_lake','qianfoshan','quancheng_sq','quancheng_park','furong_street','heihu_spring','wulongtan','hongjialou_church','baimaishan','jiurushan','hongyegu','paomaling','shandong_museum','shandong_art_museum','jinan_museum','jinan_zoo','fangte','huashan_lake','xiuyuan_river','huancheng_park','baihua_park','zhongshan_park','hero_mountain','lingsi_temple','jinan_botanical'];
+        var education = ['shandong_university','shandong_university_baotuquan','shandong_university_qianfoshan','shandong_university_hongjialou','shandong_university_software','shandong_university_xinglongshan','jinan_university','shandong_normal','shandong_normal_changqing','qilu_tech','shandong_caiing','shandong_caiing_yanshan','shandong_jianzhu','shandong_jiaotong','shandong_art'];
+        var medical = ['qilu_hospital','provincial_hospital','provincial_hospital_east','qianfoshan_hospital','jinan_central_hospital','second_hospital_shandong','provincial_tcm','jinan_children_hospital','jinan_maternal','jinan_fourth_hospital','jinan_third_hospital','shandong_cancer','jinan_stomatology'];
+        var hotel = ['hyatt_jinan','hilton_jinan','intercon_jinan','sheraton_jinan','shandong_hotel','nanjiao_hotel','silver_plaza_hotel','quancheng_hotel','jinan_marco_polo'];
+
+        if (transport.includes(id)) return '交通枢纽';
+        if (shopping.includes(id)) return '商圈购物';
+        if (tourism.includes(id)) return '旅游景点 / 公园';
+        if (education.includes(id)) return '高等院校';
+        if (medical.includes(id)) return '医疗机构';
+        if (hotel.includes(id)) return '酒店住宿';
+        if (id.includes('district')) return '行政区域';
+        if (id.includes('gov') || id.includes('public_security') || id.includes('library') || id.includes('convention') || id.includes('aoti') || id.includes('gym') || id.includes('theatre') || id.includes('radio')) return '公共设施';
+        if (id.includes('high_tech') || id.includes('software') || id.includes('hanyu') || id.includes('innovation') || id.includes('free_trade')) return '高新区 / 开发区';
+        return '其他';
+    }
+
+    // ===== 初始化 =====
+    window.addEventListener('load', function() {
+        let userRole = 'normal';
+        const tokenStr = localStorage.getItem('mamba_auth_token');
+        if (tokenStr) {
+            try {
+                const user = JSON.parse(tokenStr);
+                passengerName = user.username || '泉城旅客';
+                passengerId = user.username;
+                userRole = user.role || 'normal';
+            } catch(e) {}
+        }
+        var nameEls = document.querySelectorAll('[id="passenger-name-mobile"]');
+        nameEls.forEach(function(el) { el.innerText = passengerName; });
+
+        // 管理员/高级会员 → 只读模式
+        if (userRole === 'admin' || userRole === 'super') {
+            document.getElementById('readonly-banner').classList.remove('hidden');
+            // 禁用所有输入和按钮
+            var inputs = document.querySelectorAll('#booking-panel input, #booking-panel button, #trip-status-card button, #checkout-card button');
+            inputs.forEach(function(el) { el.disabled = true; el.classList.add('opacity-50', 'cursor-not-allowed'); });
+            // 修改叫车按钮文案
+            var callBtn = document.getElementById('call-btn');
+            if (callBtn) { callBtn.innerText = '⛔ 只读模式 · 无法叫车'; callBtn.className = 'w-full py-3.5 bg-slate-400 text-white font-extrabold rounded-xl text-sm'; }
+            var gpsBtn = document.getElementById('gps-pickup-btn');
+            if (gpsBtn) { gpsBtn.disabled = true; gpsBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
+            // 不阻止地图查看
+            populatePickupSelect();
+            initMap();
+            initGPS();
+            pollNearbyDrivers();
+            setInterval(pollNearbyDrivers, 5000);
+            return;
+        }
+
+        populatePickupSelect();
+        initMap();
+        initGPS();
+        pollNearbyDrivers();
+        setInterval(pollNearbyDrivers, 5000);
+        checkExistingTrips();
+
+        // 跨标签页同步：监听司机端状态变更，立即刷新行程UI
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'mamba_trip_sync' && e.newValue && activeTripId) {
+                try {
+                    var msg = JSON.parse(e.newValue);
+                    if (msg.action === 'status_change' && msg.tripId === activeTripId) {
+                        // 司机更新了状态 → 立即更新本地显示
+                        activeTrip.status = msg.status;
+                        activeTrip.driver_name = msg.driver_name || activeTrip.driver_name;
+                        activeTrip.driver_vehicle = msg.driver_vehicle || activeTrip.driver_vehicle;
+                        showTripStatus();
+                    }
+                } catch(er) {}
+            }
+        });
+    });
+
+    function checkExistingTrips() {
+        fetch('/api/passenger/trips?passenger_id=' + passengerId)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success && data.trips) {
+                    var active = data.trips.filter(function(t) {
+                        return t.status === 'searching' || t.status === 'accepted' || t.status === 'arrived' || t.status === 'driving';
+                    });
+                    if (active.length > 0) {
+                        activeTrip = active[0];
+                        activeTripId = activeTrip.id;
+                        showTripStatus();
+                        startTripPolling();
+                    }
+                }
+            }).catch(function() {});
+    }
+
+    function getCurrentLocationName(lng, lat) {
+        // 找到最近的地标
+        var nearest = null, minDist = Infinity;
+        JINAN_LANDMARKS.forEach(function(lm) {
+            var d = calcDist(lng, lat, lm.lng, lm.lat);
+            if (d < minDist) { minDist = d; nearest = lm; }
+        });
+        if (nearest) {
+            if (minDist < 0.2) return nearest.name;
+            if (minDist < 0.8) return nearest.name + '附近';
+        }
+        // 根据经纬度判断大致区域
+        var district = '济南市';
+        if (lat > 36.75) district = '济阳区';
+        else if (lat > 36.72) district = '历城区北部';
+        else if (lng < 116.90) district = '槐荫区';
+        else if (lng < 117.00) district = '市中区';
+        else if (lng < 117.08) district = '历下区';
+        else if (lng < 117.20) district = '历城区';
+        else if (lng < 117.40) district = '章丘区';
+        else if (lng >= 117.40) district = '高新区东部';
+        if (lat < 36.55) district = '长清区';
+        if (nearest && minDist < 3) return district + ' · ' + nearest.name + '周边';
+        return district;
+    }
+
+    function populatePickupSelect() {
+        var input = document.getElementById('pickup-input');
+        var hidden = document.getElementById('pickup-hidden');
+        var locName = getCurrentLocationName(passengerPosition.lng, passengerPosition.lat);
+        if (input) { input.value = locName; input.dataset.lastValid = locName; }
+        if (hidden) hidden.value = 'current';
+        selectedPickup = { name: locName, lng: passengerPosition.lng, lat: passengerPosition.lat };
+    }
+
+    function useCurrentLocation() {
+        var input = document.getElementById('pickup-input');
+        var hidden = document.getElementById('pickup-hidden');
+        var locName = getCurrentLocationName(passengerPosition.lng, passengerPosition.lat);
+        if (input) { input.value = locName; input.dataset.lastValid = locName; }
+        if (hidden) hidden.value = 'current';
+        selectedPickup = { name: locName, lng: passengerPosition.lng, lat: passengerPosition.lat };
+        document.getElementById('pickup-fuzzy-dropdown').classList.add('hidden');
+
+        if (gpsLocated) {
+            map.setView([passengerPosition.lat, passengerPosition.lng], 15);
+            updateUserOnMap();
+        }
+        updateEstimate();
+
+        var btn = document.getElementById('gps-pickup-btn');
+        btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 已定位';
+        btn.classList.remove('bg-emerald-500', 'hover:bg-emerald-600');
+        btn.classList.add('bg-emerald-600');
+        setTimeout(function() {
+            btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 当前位置';
+            btn.classList.remove('bg-emerald-600');
+            btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
+            if (window.lucide) lucide.createIcons();
+        }, 1200);
+        if (window.lucide) lucide.createIcons();
+    }
+
+    // ===== 上车点：focus → 清空以便输入 =====
+    function onPickupFocus() {
+        var input = document.getElementById('pickup-input');
+        input.select();
+        // 显示下拉（含"当前位置"快捷选项，显示具体位置名）
+        showPickupDropdown('');
+    }
+
+    // ===== 上车点：blur → 如果为空则恢复默认 =====
+    function onPickupBlur() {
+        var input = document.getElementById('pickup-input');
+        var hidden = document.getElementById('pickup-hidden');
+        setTimeout(function() {
+            document.getElementById('pickup-fuzzy-dropdown').classList.add('hidden');
+            if (!input.value.trim()) {
+                var locName = getCurrentLocationName(passengerPosition.lng, passengerPosition.lat);
+                input.value = locName;
+                input.dataset.lastValid = locName;
+                hidden.value = 'current';
+                selectedPickup = { name: locName, lng: passengerPosition.lng, lat: passengerPosition.lat };
+                updateEstimate();
+            }
+        }, 200);
+    }
+
+    // ===== 上车点模糊搜索 =====
+    function onPickupInput() {
+        var input = document.getElementById('pickup-input');
+        var query = input.value.trim().toLowerCase();
+        showPickupDropdown(query);
+    }
+
+    function showPickupDropdown(query) {
+        var input = document.getElementById('pickup-input');
+        var dropdown = document.getElementById('pickup-fuzzy-dropdown');
+        var hidden = document.getElementById('pickup-hidden');
+
+        var html = '';
+
+        // 始终显示具体当前位置作为首选项
+        var locName = getCurrentLocationName(passengerPosition.lng, passengerPosition.lat);
+        html += '<div class="px-3 py-2.5 hover:bg-emerald-50 cursor-pointer border-b border-slate-100 flex items-center gap-2.5 text-sm transition" onmousedown="event.preventDefault();" onclick="useCurrentLocation()">' +
+            '<span class="text-base shrink-0">📍</span>' +
+            '<div class="flex flex-col"><span class="text-slate-700 font-medium">' + locName + '</span><span class="text-[10px] text-emerald-500 font-bold">GPS 实时定位 · 点击使用</span></div>' +
+            '</div>';
+
+        if (!query) {
+            // 无搜索词时显示热门地点
+            var hotIds = ['quancheng_sq','jinan_railway','jinan_west','baotu_spring','daming_lake','qianfoshan','yaoqiang_airport','gaoxin_wanda','aoti_center','shandong_university'];
+            html += '<div class="px-3 py-1.5 text-[10px] text-slate-400 font-bold uppercase tracking-wider">热门地点</div>';
+            hotIds.forEach(function(id) {
+                var lm = JINAN_LANDMARKS.find(function(l) { return l.id === id; });
+                if (lm) {
+                    html += '<div class="px-3 py-2.5 hover:bg-emerald-50 cursor-pointer border-b border-slate-50 last:border-b-0 flex items-center gap-2.5 text-sm transition" onmousedown="event.preventDefault();" onclick="selectPickupLandmark(\'' + lm.id + '\',\'' + lm.name.replace(/'/g, "\\'") + '\',' + lm.lng + ',' + lm.lat + ')">' +
+                        '<span class="text-base shrink-0">📍</span>' +
+                        '<div class="flex flex-col"><span class="text-slate-700 font-medium">' + lm.name + '</span><span class="text-[10px] text-slate-400">' + getCategoryLabel(lm.id) + '</span></div>' +
+                        '</div>';
+                }
+            });
+            if (html) { dropdown.innerHTML = html; dropdown.classList.remove('hidden'); }
+            else { dropdown.classList.add('hidden'); }
+            return;
+        }
+
+        // 有搜索词 → 评分排序
+        var scored = [];
+        JINAN_LANDMARKS.forEach(function(lm) {
+            var score = 0;
+            if (lm.name === query) score = 100;
+            else if (lm.name.toLowerCase().startsWith(query)) score = 80;
+            else if (lm.name.toLowerCase().includes(query)) score = 60;
+            if (score === 0 && lm.aliases) {
+                for (var i = 0; i < lm.aliases.length; i++) {
+                    var a = lm.aliases[i].toLowerCase();
+                    if (a === query) { score = 90; break; }
+                    else if (a.startsWith(query)) { score = Math.max(score, 70); }
+                    else if (a.includes(query)) { score = Math.max(score, 50); }
+                }
+            }
+            if (score === 0 && lm.id.toLowerCase().includes(query.replace(/\s+/g, '_'))) score = 40;
+            if (score === 0) {
+                var allText = (lm.name + ' ' + (lm.aliases || []).join(' ')).toLowerCase();
+                if (query.length >= 2 && query.split('').every(function(c) { return allText.includes(c); })) score = 30;
+            }
+            if (score > 0) scored.push({ lm: lm, score: score });
+        });
+        scored.sort(function(a, b) { return b.score - a.score; });
+        var topResults = scored.slice(0, 12);
+
+        if (topResults.length === 0) {
+            html += '<div class="p-3 text-xs text-slate-400 text-center">未找到匹配地点</div>';
+        } else {
+            topResults.forEach(function(item) {
+                var lm = item.lm;
+                html += '<div class="px-3 py-2.5 hover:bg-emerald-50 cursor-pointer border-b border-slate-50 last:border-b-0 flex items-center gap-2.5 text-sm transition" onmousedown="event.preventDefault();" onclick="selectPickupLandmark(\'' + lm.id + '\',\'' + lm.name.replace(/'/g, "\\'") + '\',' + lm.lng + ',' + lm.lat + ')">' +
+                    '<span class="text-base shrink-0">📍</span>' +
+                    '<div class="flex flex-col"><span class="text-slate-700 font-medium">' + highlightMatch(lm.name, query) + '</span><span class="text-[10px] text-slate-400">' + getCategoryLabel(lm.id) + '</span></div>' +
+                    '</div>';
+            });
+        }
+
+        dropdown.innerHTML = html;
+        dropdown.classList.remove('hidden');
+
+        document.addEventListener('click', function closePD(e) {
+            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.add('hidden');
+                document.removeEventListener('click', closePD);
+            }
+        });
+    }
+
+    function selectPickupLandmark(id, name, lng, lat) {
+        var input = document.getElementById('pickup-input');
+        var hidden = document.getElementById('pickup-hidden');
+        if (input) { input.value = name; input.dataset.lastValid = name; }
+        if (hidden) hidden.value = id;
+        document.getElementById('pickup-fuzzy-dropdown').classList.add('hidden');
+        selectedPickup = { name: name, lng: lng, lat: lat };
+        map.setView([lat, lng], 15);
+        updateEstimate();
+    }
+
+    // ===== GPS 定位 =====
+    function initGPS() {
+        if (!navigator.geolocation) {
+            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 无法获取GPS';
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                passengerPosition = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+                gpsLocated = true;
+                updateUserOnMap();
+                document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> GPS 已定位 (±' + Math.round(pos.coords.accuracy || 10) + 'm)';
+                useCurrentLocation();
+                updateEstimate();
+            },
+            function(err) {
+                document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 使用默认位置 (济南市中心)';
+            },
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
+
+        gpsWatchId = navigator.geolocation.watchPosition(
+            function(pos) {
+                if (!activeTrip) {
+                    passengerPosition = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+                    gpsLocated = true;
+                    updateUserOnMap();
+                    document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> GPS 实时追踪中';
+                }
+            },
+            function() {},
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    }
+
+    // ===== 地图 =====
+    function initMap() {
+        map = L.map('passengerMap', { zoomControl: true, attributionControl: false })
+            .setView([36.661156, 117.024967], 12);
+
+        L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+            subdomains: ['1','2','3','4'], maxZoom: 18
+        }).addTo(map);
+
+        const userIcon = L.divIcon({
+            html: '<div class="bg-cyan-500 text-white rounded-full w-9 h-9 flex items-center justify-center text-sm font-bold border-2 border-white shadow-lg" style="box-shadow: 0 0 0 0 rgba(6,182,212,0.5); animation: pulse-gps 2s infinite cubic-bezier(0.66,0,0,1);">👤</div>',
+            className: '', iconSize: [36,36], iconAnchor: [18,18]
+        });
+        userMarker = L.marker([passengerPosition.lat, passengerPosition.lng], { icon: userIcon }).addTo(map);
+
+        // 地标标记
+        JINAN_LANDMARKS.forEach(function(lm) {
+            const icon = L.divIcon({
+                html: '<div class="text-xs">📍</div>',
+                className: '', iconSize: [16,16], iconAnchor: [8,16]
+            });
+            L.marker([lm.lat, lm.lng], { icon: icon }).addTo(map)
+                .bindTooltip(lm.name, { direction: 'top' });
+        });
+
+        map.on('click', function(e) {
+            if (activeTrip) return;
+            passengerPosition = { lng: e.latlng.lng, lat: e.latlng.lat };
+            updateUserOnMap();
+            useCurrentLocation();
+            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span> 手动设定上车点';
+        });
+    }
+
+    function updateUserOnMap() {
+        if (!userMarker) return;
+        userMarker.setLatLng([passengerPosition.lat, passengerPosition.lng]);
+        if (map && !activeTrip) {
+            map.panTo([passengerPosition.lat, passengerPosition.lng], { animate: true, duration: 0.5 });
+        }
+    }
+
+    // ===== 选择上下车点 =====
+    function updateEstimate() {
+        if (!selectedDropoff) return;
+        const pickup = selectedPickup || { lng: passengerPosition.lng, lat: passengerPosition.lat, name: '当前位置' };
+        const dist = calcDist(pickup.lng, pickup.lat, selectedDropoff.lng, selectedDropoff.lat);
+        const price = Math.max(10, Math.round(dist * 2.8 + 8));
+        const duration = Math.max(5, Math.round(dist * 1.8));
+
+        document.getElementById('estimate-box').classList.remove('hidden');
+        document.getElementById('est-dist').innerText = dist.toFixed(1) + ' km';
+        document.getElementById('est-duration').innerText = duration + ' 分钟';
+        document.getElementById('est-price').innerText = '¥ ' + price.toFixed(2);
+    }
+
+    // ===== 叫车 =====
+    function callTaxi() {
+        if (!selectedDropoff) {
+            var input = document.getElementById('dropoff-input');
+            input.focus();
+            input.classList.add('border-rose-400');
+            setTimeout(function() { input.classList.remove('border-rose-400'); }, 1500);
+            alert('请先输入并选择目的地');
+            return;
+        }
+
+        const pickup = selectedPickup || { name: '我的当前位置', lng: passengerPosition.lng, lat: passengerPosition.lat };
+        const dist = calcDist(pickup.lng, pickup.lat, selectedDropoff.lng, selectedDropoff.lat);
+        const price = Math.max(10, Math.round(dist * 2.8 + 8));
+        const duration = Math.max(5, Math.round(dist * 1.8));
+
+        const btn = document.getElementById('call-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span> 正在呼叫...';
+
+        fetch('/api/trips', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                passenger_id: passengerId,
+                passenger_name: passengerName,
+                pickup: pickup,
+                dropoff: selectedDropoff,
+                pickup_lng: pickup.lng,
+                pickup_lat: pickup.lat,
+                dropoff_lng: selectedDropoff.lng,
+                dropoff_lat: selectedDropoff.lat,
+                price: price,
+                distance: parseFloat(dist.toFixed(1)),
+                duration: duration,
+                ride_type: 'sd_xuan'
+            })
+        }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.success) {
+                activeTripId = data.trip.id;
+                activeTrip = data.trip;
+                showTripStatus();
+                startTripPolling();
+                // 跨标签页同步：通知司机端有新行程
+                localStorage.setItem('mamba_trip_sync', JSON.stringify({
+                    action: 'new_trip',
+                    tripId: data.trip.id,
+                    pickup: pickup,
+                    dropoff: selectedDropoff,
+                    price: price,
+                    timestamp: Date.now()
+                }));
+            } else {
+                alert('叫车失败，请重试');
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="car" class="w-4 h-4"></i> 立即叫车';
+                lucide.createIcons();
+            }
+        }).catch(function() {
+            alert('网络错误，请检查服务器连接');
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="car" class="w-4 h-4"></i> 立即叫车';
+            lucide.createIcons();
+        });
+    }
+
+    // ===== 行程状态显示 =====
+    function showTripStatus() {
+        // 如果是已完成状态，显示结账卡
+        if (activeTrip.status === 'completed') {
+            showCheckout();
+            return;
+        }
+
+        document.getElementById('booking-panel').classList.add('hidden');
+        document.getElementById('trip-status-card').classList.remove('hidden');
+        document.getElementById('checkout-card').classList.add('hidden');
+
+        const statusTexts = {
+            'searching': '正在匹配最佳司机...',
+            'accepted': '司机已接单 · 正在赶来',
+            'arrived': '司机已到达上车点',
+            'driving': '行程进行中...',
+            'cancelled': '行程已取消'
+        };
+        document.getElementById('trip-status-title').innerText = statusTexts[activeTrip.status] || '处理中...';
+        document.getElementById('trip-driver').innerText = activeTrip.driver_name || '系统自动匹配中...';
+        document.getElementById('trip-driver-vehicle').innerText = activeTrip.driver_vehicle || '';
+        // 评分星级
+        var rating = parseFloat(activeTrip.driver_rating) || 0;
+        var stars = '';
+        for (var s = 0; s < 5; s++) { stars += s < Math.round(rating) ? '★' : '☆'; }
+        document.getElementById('trip-driver-stars').innerText = stars;
+        document.getElementById('trip-driver-rating').innerText = rating > 0 ? rating.toFixed(1) + ' 分' : '';
+        // 隐藏司机卡片当还在搜索时
+        document.getElementById('trip-driver-card').style.display = (activeTrip.status === 'searching') ? 'none' : '';
+        document.getElementById('trip-pickup').innerText = (activeTrip.pickup && activeTrip.pickup.name) || '上车点';
+        document.getElementById('trip-dropoff').innerText = (activeTrip.dropoff && activeTrip.dropoff.name) || '目的地';
+        document.getElementById('trip-price').innerText = '¥ ' + parseFloat(activeTrip.price || 0).toFixed(2);
+    }
+
+    // ===== 结账确认卡 =====
+    function showCheckout() {
+        clearInterval(tripPollTimer);
+        document.getElementById('booking-panel').classList.add('hidden');
+        document.getElementById('trip-status-card').classList.add('hidden');
+        document.getElementById('checkout-card').classList.remove('hidden');
+
+        var pickupName = (activeTrip.pickup && activeTrip.pickup.name) || '上车点';
+        var dropoffName = (activeTrip.dropoff && activeTrip.dropoff.name) || '目的地';
+        var price = parseFloat(activeTrip.price || 0).toFixed(2);
+        var distance = activeTrip.distance ? parseFloat(activeTrip.distance).toFixed(1) + ' km' : '--';
+
+        document.getElementById('checkout-route').innerText = pickupName + ' → ' + dropoffName;
+        document.getElementById('checkout-driver').innerText = activeTrip.driver_name || '司机';
+        document.getElementById('checkout-vehicle').innerText = activeTrip.driver_vehicle || '--';
+        var rating2 = parseFloat(activeTrip.driver_rating) || 0;
+        var stars2 = '';
+        for (var s = 0; s < 5; s++) { stars2 += s < Math.round(rating2) ? '★' : '☆'; }
+        document.getElementById('checkout-stars').innerText = stars2 + (rating2 > 0 ? ' ' + rating2.toFixed(1) : '');
+        document.getElementById('checkout-distance').innerText = distance;
+        document.getElementById('checkout-price').innerText = '¥ ' + price;
+        document.getElementById('checkout-pay-btn').innerText = '确认支付 ¥' + price;
+    }
+
+    function confirmPayment() {
+        var btn = document.getElementById('checkout-pay-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></span>支付中...';
+
+        // 保存/更新行程记录（标记已付款）
+        var trips = [];
+        try { trips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
+        var found = trips.filter(function(t) { return t.id === activeTrip.id; });
+        if (found.length > 0) {
+            // 司机已自动写入，更新为已付款
+            found.forEach(function(t) { t.paid = true; });
+        } else {
+            // 新写入
+            trips.unshift({
+                id: activeTrip.id,
+                passenger_name: activeTrip.passenger_name || passengerName,
+                driver_name: activeTrip.driver_name || '司机',
+                pickup: activeTrip.pickup,
+                dropoff: activeTrip.dropoff,
+                price: activeTrip.price,
+                distance: activeTrip.distance,
+                timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
+                status: 'completed',
+                paid: true
+            });
+        }
+        localStorage.setItem('mamba_passenger_trips', JSON.stringify(trips));
+
+        // 同步更新司机端的记录
+        var dTrips = [];
+        try { dTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
+        dTrips.forEach(function(t) { if (t.id === activeTrip.id) t.paid = true; });
+        localStorage.setItem('mamba_completed_trips', JSON.stringify(dTrips));
+
+        // 短暂显示支付成功
+        btn.innerHTML = '✅ 支付成功';
+        btn.className = 'w-full py-3.5 bg-emerald-600 text-white font-extrabold rounded-xl text-sm transition shadow-lg';
+
+        setTimeout(function() { resetBooking(); }, 1500);
+    }
+
+    function startTripPolling() {
+        if (tripPollTimer) clearInterval(tripPollTimer);
+        tripPollTimer = setInterval(function() {
+            if (!activeTripId || !activeTrip) return;
+            if (activeTrip.status === 'completed' || activeTrip.status === 'cancelled') {
+                clearInterval(tripPollTimer);
+                return;
+            }
+            fetch('/api/trips/' + activeTripId)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success && data.trip) {
+                        const prevStatus = activeTrip.status;
+                        activeTrip = data.trip;
+                        if (activeTrip.status !== prevStatus) {
+                            showTripStatus();
+                        }
+                    }
+                }).catch(function() {});
+        }, 3000);
+    }
+
+    function cancelTrip() {
+        if (!activeTripId) return;
+        if (activeTrip && (activeTrip.status === 'completed' || activeTrip.status === 'cancelled')) {
+            resetBooking();
+            return;
+        }
+        if (!confirm('确定取消当前行程吗？')) return;
+
+        fetch('/api/trips/' + activeTripId + '/cancel', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ cancelled_by: 'passenger' })
+        }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.success) {
+                // 保存取消记录
+                var trips = [];
+                try { trips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
+                var exists = trips.some(function(t) { return t.id === activeTripId; });
+                if (!exists) {
+                    trips.unshift({
+                        id: activeTripId,
+                        passenger_name: activeTrip ? activeTrip.passenger_name : passengerName,
+                        driver_name: activeTrip ? activeTrip.driver_name : '',
+                        pickup: activeTrip ? activeTrip.pickup : {},
+                        dropoff: activeTrip ? activeTrip.dropoff : {},
+                        price: activeTrip ? activeTrip.price : 0,
+                        distance: activeTrip ? activeTrip.distance : 0,
+                        timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
+                        status: 'cancelled'
+                    });
+                    localStorage.setItem('mamba_passenger_trips', JSON.stringify(trips));
+                }
+            }
+        }).catch(function() {});
+
+        resetBooking();
+    }
+
+    function resetBooking() {
+        if (tripPollTimer) clearInterval(tripPollTimer);
+        activeTrip = null;
+        activeTripId = null;
+        document.getElementById('booking-panel').classList.remove('hidden');
+        document.getElementById('trip-status-card').classList.add('hidden');
+        document.getElementById('checkout-card').classList.add('hidden');
+        document.getElementById('call-btn').disabled = false;
+        document.getElementById('call-btn').innerHTML = '<i data-lucide="car" class="w-4 h-4"></i> 立即叫车';
+        document.getElementById('dropoff-input').value = '';
+        document.getElementById('dropoff-hidden').value = '';
+        selectedDropoff = null;
+        document.getElementById('estimate-box').classList.add('hidden');
+        // 恢复上车点为当前具体位置
+        var locName = getCurrentLocationName(passengerPosition.lng, passengerPosition.lat);
+        var pickupInput = document.getElementById('pickup-input');
+        var pickupHidden = document.getElementById('pickup-hidden');
+        if (pickupInput) { pickupInput.value = locName; pickupInput.dataset.lastValid = locName; }
+        if (pickupHidden) pickupHidden.value = 'current';
+        selectedPickup = { name: locName, lng: passengerPosition.lng, lat: passengerPosition.lat };
+        lucide.createIcons();
+    }
+
+    // ===== 查看附近司机 =====
+    function pollNearbyDrivers() {
+        fetch('/api/drivers')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    var cnt = data.drivers.length;
+                    document.getElementById('nearby-count').innerText = cnt;
+                    var mobileCnt = document.getElementById('nearby-count-mobile');
+                    if (mobileCnt) mobileCnt.innerText = cnt + ' 辆';
+                    updateDriverMarkers(data.drivers);
+                }
+            })
+            .catch(function() {
+                document.getElementById('nearby-count').innerText = '--';
+                var mobileCnt = document.getElementById('nearby-count-mobile');
+                if (mobileCnt) mobileCnt.innerText = '--';
+            });
+    }
+
+    function updateDriverMarkers(drivers) {
+        driverMarkers.forEach(function(m) { map.removeLayer(m); });
+        driverMarkers = [];
+        drivers.forEach(function(d) {
+            const icon = L.divIcon({
+                html: '<div class="bg-amber-400 text-white rounded-full w-6 h-6 flex items-center justify-center text-[10px] font-bold border border-white shadow">🚕</div>',
+                className: '', iconSize: [24,24], iconAnchor: [12,12]
+            });
+            const marker = L.marker([d.location.lat, d.location.lng], { icon: icon })
+                .addTo(map)
+                .bindTooltip(d.name + (d.status === 'busy' ? ' (载客中)' : ''), { direction: 'top' });
+            driverMarkers.push(marker);
+        });
+    }
+
+    // GPS pulse animation
+    const style = document.createElement('style');
+    style.textContent = '@keyframes pulse-gps { to { box-shadow: 0 0 0 14px rgba(6,182,212,0); } }';
+    document.head.appendChild(style);
+    lucide.createIcons();
+</script>
+{% endblock %}

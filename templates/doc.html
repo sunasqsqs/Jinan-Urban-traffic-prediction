@@ -32,6 +32,15 @@
 
     html { scroll-behavior: smooth; }
     section { scroll-margin-top: 100px; }
+
+    @media (max-width: 640px) {
+        .glass-panel.p-10 { padding: 1rem !important; }
+        h1.text-3xl { font-size: 1.5rem !important; }
+        h2 { font-size: 1.2rem !important; margin-top: 2rem; }
+        h3 { font-size: 0.95rem !important; }
+        .code-block { font-size: 0.7rem; padding: 0.75rem; }
+        .doc-table th, .doc-table td { padding: 8px; font-size: 0.7rem; }
+    }
 </style>
 
 <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 pb-12">

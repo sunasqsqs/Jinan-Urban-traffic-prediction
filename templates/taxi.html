@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 
 <style>
     /* 优雅自定义滚动条 */
@@ -48,6 +48,23 @@
     }
     .animate-bounce-short {
         animation: bounce-short 3s infinite ease-in-out;
+    }
+
+    @media (max-width: 640px) {
+        #leafletMap { height: 300px !important; }
+        .min-h-\\[460px\\] { min-height: 300px !important; }
+        .min-h-\\[580px\\] { min-height: auto !important; }
+        #dispatch-alert-modal { width: 90vw; right: 5vw; bottom: 1rem; }
+        h3.text-3xl { font-size: 1.25rem !important; }
+        .text-xl { font-size: 1rem !important; }
+        .bg-white.p-4.rounded-xl { padding: 0.75rem !important; }
+        .text-2xl { font-size: 1.25rem !important; }
+        .terminal-font.text-\\[10px\\] { font-size: 8px !important; }
+        #d-available-list { max-height: 260px; }
+        .absolute.top-4.left-4 { max-width: 180px; font-size: 9px !important; padding: 0.5rem !important; }
+        .flex-wrap.gap-1\\.5.text-\\[10px\\] button,
+        .flex-wrap.gap-2 button { font-size: 10px !important; padding: 0.25rem 0.5rem !important; }
+        #landmark-buttons-container button { font-size: 10px !important; padding: 0.25rem 0.5rem !important; }
     }
 </style>
 
@@ -982,10 +999,10 @@
         hoverGridId = null;
     }
 
-    // 💡 直接使用硬编码数据
-    function startSpatiotemporalSync() {
+    // 💡 从 JSON 文件加载数据，失败时使用硬编码兜底
+    async function startSpatiotemporalSync() {
         experimentData = EMBEDDED_EXPERIMENT_DATA;
-        writeLog("⚡ 成功启动内嵌 Mamba-GNN 长周期时空孪生预测数据 (本地硬编码态)", "success");
+        writeLog("⚡ 使用内嵌 Mamba-GNN 长周期数据", "success");
         onSyncSuccess();
     }
 

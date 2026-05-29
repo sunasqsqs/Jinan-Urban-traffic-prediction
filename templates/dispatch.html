@@ -1,476 +1,891 @@
 {% extends "base.html" %}
 {% block content %}
-<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+
 <style>
-    /* 自定义滚动条美化 */
-    ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    #dispatchMap {
+        height: 560px;
+        width: 100%;
+        border-radius: 16px;
+        border: 1px solid #e2e8f0;
+        box-shadow: inset 0 2px 4px 0 rgba(148, 163, 184, 0.05);
+        z-index: 10;
     }
-    ::-webkit-scrollbar-track {
-        background: transparent;
+    .leaflet-tile-pane {
+        filter: grayscale(10%) contrast(100%) brightness(100%);
     }
-    ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 10px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
+    @media (max-width: 640px) {
+        #dispatchMap { height: 300px; border-radius: 10px; }
+        /* 面板紧凑 */
+        .bg-white.rounded-2xl { border-radius: 12px; }
+        /* 系统终端日志变小 */
+        #strategy-log { max-height: 180px; min-height: 100px; font-size: 11px; }
+        #strategy-log .flex { font-size: 11px; }
+        /* 头部信息紧凑 */
+        h3 { font-size: 1.25rem !important; }
+        /* 卡片全宽 */
+        #dispatch-grid-container .rounded-xl { border-radius: 10px; padding: 12px; }
+        /* 广播订单紧凑 */
+        #broadcast-orders-list .rounded-xl { border-radius: 10px; padding: 12px; }
+        /* 横向滚动支持 */
+        #dispatch-grid-container { max-height: 320px; }
+        #broadcast-orders-list { max-height: 300px; }
     }
 </style>
 
-<div class="bg-slate-50 font-sans text-slate-800 antialiased min-h-screen p-4 md:p-8">
+<div class="bg-slate-50 font-sans text-slate-800 antialiased min-h-screen p-2 sm:p-4 md:p-8">
     <div class="max-w-7xl mx-auto space-y-6 animate-fadeIn pb-12">
 
-        <!-- 头部导航与状态大屏 -->
+        <!-- 头部 -->
         <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 relative overflow-hidden">
-            <!-- 装饰性背景 -->
             <div class="absolute top-0 right-0 -mt-16 -mr-16 w-64 h-64 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-full blur-3xl opacity-70 pointer-events-none"></div>
-
             <div class="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-                <!-- 左侧标题区 -->
                 <div class="flex-1">
                     <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-mono mb-4 shadow-sm font-medium">
-                        <i data-lucide="cpu" class="w-3.5 h-3.5 text-indigo-500 animate-spin" style="animation-duration: 4s;"></i>
+                        <span class="relative flex h-2 w-2">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                        </span>
                         MAMBA-GNN RECURSIVE DISPATCH ENGINE
                     </div>
                     <h3 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-600 mb-2 tracking-tight">智能运力引导与决策大厅</h3>
                     <p class="text-slate-500 text-sm max-w-3xl leading-relaxed">
-                        基于预测集数据模拟实时推演，精准计算周边网格运力缺口。用户可下发引导指令，进行智能交通调度。
+                        基于 Mamba-GNN 时空预测模型，实时渲染济南市 225 个网格的供需热力分布。点击网格卡片或地图即可下发调度指令。
                     </p>
+                    <!-- 管理员 ⛔ 只读提示 -->
+                    <div id="readonly-banner" class="hidden mt-3 bg-amber-50 border border-amber-300 rounded-lg px-4 py-2.5 flex items-center gap-2">
+                        <span class="text-amber-500 text-lg">⚠️</span>
+                        <div>
+                            <span class="text-amber-700 text-xs font-bold">只读模式</span>
+                            <span class="text-amber-600 text-xs ml-2">您当前以管理员身份查看调度大厅，无法下发调度指令或取消广播，但可正常查看所有数据。</span>
+                        </div>
+                    </div>
                 </div>
-
-                <!-- 右侧状态区 -->
-                <div class="flex flex-col sm:flex-row items-stretch gap-4 w-full lg:w-[45%] xl:w-[40%]">
-                    <!-- 联通状态 -->
+                <div class="flex flex-col sm:flex-row items-stretch gap-4 w-full lg:w-[380px]">
                     <div id="conn-status" class="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold shadow-inner">
                         <span class="relative flex h-3 w-3">
                           <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                         </span>
-                        <span>模拟实时预测中</span>
+                        <span>实时预测推演中</span>
                     </div>
-
-                    <!-- 轮次时间 -->
-                    <div class="flex-1 bg-amber-50 rounded-xl p-4 shadow-sm border border-amber-200 flex flex-col justify-center items-center relative overflow-hidden">
-                        <div class="text-amber-500 text-[10px] font-bold tracking-widest uppercase mb-1 relative z-10">当前时间</div>
-                        <div id="system-epoch" class="text-3xl font-black text-amber-600 font-mono tracking-wider relative z-10">--:--:--</div>
+                    <div class="flex-1 bg-amber-50 rounded-xl p-4 shadow-sm border border-amber-200 flex flex-col justify-center items-center">
+                        <div class="text-amber-500 text-[10px] font-bold tracking-widest uppercase mb-1">当前推演时间</div>
+                        <div id="system-epoch" class="text-3xl font-black text-amber-600 font-mono tracking-wider">--:--:--</div>
+                        <div id="tick-indicator" class="text-[10px] text-amber-400 font-mono mt-1">T+0 / 50</div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 核心调度区域 -->
-        <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
-            <!-- 调度区头部 -->
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-6 pb-6 border-b border-slate-100">
-                <div>
-                    <div class="flex items-center gap-2 mb-1">
-                        <div class="p-1.5 bg-rose-100 rounded-md text-rose-600"><i data-lucide="target" class="w-4 h-4"></i></div>
-                        <div class="text-slate-500 text-xs font-bold uppercase tracking-wider">综合调度状态评估</div>
-                    </div>
-                    <h4 class="text-xl font-bold text-slate-800 flex items-center gap-2">
-                        各网格 30分钟后峰值 调度方案
-                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">高危置顶优先</span>
-                    </h4>
-                </div>
+        <!-- 地图 + 调度卡片 双栏布局 -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-                <div class="text-left md:text-right bg-slate-50 px-5 py-3 rounded-xl border border-slate-100">
-                    <div class="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">全局调配压力系数</div>
-                    <div class="flex items-baseline gap-1 justify-start md:justify-end">
-                        <div id="pressure-gauge" class="text-3xl font-black text-indigo-600 font-mono leading-none">0%</div>
-                        <i data-lucide="activity" class="w-5 h-5 text-indigo-400 opacity-70"></i>
+            <!-- 左侧：大地图 -->
+            <div class="lg:col-span-8 flex flex-col gap-4">
+                <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                    <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="map" class="w-5 h-5 text-rose-500"></i>
+                            <span class="text-sm font-bold text-slate-800">济南市 225 网格 · Mamba-GNN 时空需求热力图</span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3 text-xs font-semibold">
+                            <label class="flex items-center gap-1.5 cursor-pointer bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg select-none">
+                                <input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmap()" class="rounded text-rose-500 focus:ring-rose-400 border-slate-300" checked>
+                                <span class="text-slate-700">热力图层</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg select-none">
+                                <input type="checkbox" id="label-toggle" onchange="toggleLabels()" class="rounded text-indigo-500 focus:ring-indigo-400 border-slate-300" checked>
+                                <span class="text-slate-700">预测标签</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="relative bg-slate-50 rounded-xl overflow-hidden border border-slate-200">
+                        <div id="dispatchMap" class="w-full"></div>
+                        <!-- 图例 -->
+                        <div class="absolute bottom-4 left-4 bg-white/95 backdrop-blur-md border border-slate-200 p-3 rounded-xl shadow-lg z-10 text-xs">
+                            <div class="font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                                <i data-lucide="layers" class="w-3.5 h-3.5 text-rose-500"></i> 需求色阶
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-[10px] text-slate-400">低</span>
+                                <div class="flex h-3 rounded-full overflow-hidden border border-slate-200">
+                                    <div class="w-5 h-full" style="background:#fee2e2"></div>
+                                    <div class="w-5 h-full" style="background:#fca5a5"></div>
+                                    <div class="w-5 h-full" style="background:#f87171"></div>
+                                    <div class="w-5 h-full" style="background:#ef4444"></div>
+                                    <div class="w-5 h-full" style="background:#b91c1c"></div>
+                                    <div class="w-5 h-full" style="background:#991b1b"></div>
+                                </div>
+                                <span class="text-[10px] text-slate-400">高</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 动态网格容器 -->
-            <div id="dispatch-grid-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 min-h-[220px]">
-                <div class="col-span-full text-center text-slate-400 py-16 text-sm animate-pulse flex flex-col items-center justify-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                    <i data-lucide="loader-2" class="w-8 h-8 text-indigo-400 mb-3 animate-spin"></i>
-                    <span>正在初始化内置长周期推演数据，请稍候...</span>
+            <!-- 右侧：调度卡片面板 -->
+            <div class="lg:col-span-4 flex flex-col gap-4">
+                <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                    <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                        <h4 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+                            <i data-lucide="target" class="w-4 h-4 text-rose-500"></i>
+                            高危网格调度面板
+                        </h4>
+                        <div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-50 text-slate-600 text-[10px] font-mono font-bold border border-slate-200">
+                            全局压力: <span id="pressure-gauge" class="text-indigo-600 ml-1">0%</span>
+                        </div>
+                    </div>
+                    <div id="dispatch-grid-container" class="flex flex-col gap-3 max-h-[420px] overflow-y-auto pr-1">
+                        <div class="text-center text-slate-400 py-12 text-sm animate-pulse">初始化推演数据...</div>
+                    </div>
+                    <!-- 策略建议条 -->
+                    <div id="current-strategy" class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500 leading-relaxed">正在分析全网供需态势...</div>
                 </div>
-            </div>
 
-            <!-- 底部策略与操作栏 -->
-            <div class="mt-8 bg-indigo-50/50 rounded-xl p-5 border border-indigo-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-5 transition-all">
-                <div class="flex items-start gap-3 flex-1">
-                    <div class="p-2.5 bg-indigo-100 rounded-lg text-indigo-600 mt-0.5 shadow-sm">
-                        <i data-lucide="lightbulb" class="w-5 h-5"></i>
+                <!-- 实时广播调度订单 -->
+                <div class="bg-white rounded-2xl border-2 border-rose-200 p-5 shadow-sm">
+                    <div class="flex items-center justify-between mb-3 pb-3 border-b border-rose-100">
+                        <h4 class="font-bold text-sm text-rose-700 flex items-center gap-2">
+                            <i data-lucide="radio-tower" class="w-4 h-4"></i>
+                            实时广播调度
+                        </h4>
+                        <span class="text-[10px] text-rose-400 font-mono animate-pulse">LIVE</span>
                     </div>
-                    <div>
-                        <span class="text-xs text-indigo-400 font-bold uppercase tracking-widest">当前智能调度建议</span>
-                        <p id="current-strategy" class="text-indigo-800 text-sm font-medium mt-1 leading-relaxed">初始化监听，等待大宗预测流导入...</p>
+                    <div id="broadcast-orders-list" class="flex flex-col gap-3 max-h-[420px] overflow-y-auto pr-1">
+                        <div class="text-center text-slate-400 py-8 text-xs">暂无广播中的调度订单<br><span class="text-[10px]">点击左侧网格卡片发送调度令</span></div>
                     </div>
                 </div>
-                <button onclick="simulateDispatchOptimization()" class="w-full md:w-auto px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white transition-all duration-200 rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 flex items-center justify-center gap-2 transform hover:-translate-y-0.5">
-                    <i data-lucide="zap" class="w-4 h-4"></i> 一键全局调优
-                </button>
             </div>
         </div>
 
-        <!-- 终端日志区域 (已修改为浅色系) -->
+        <!-- 终端日志 -->
         <div class="bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200 flex flex-col">
             <div class="bg-slate-50 px-6 py-3.5 border-b border-slate-100 flex justify-between items-center">
                 <h4 class="text-slate-700 font-mono font-semibold flex items-center gap-2 text-sm tracking-wide">
                     <i data-lucide="terminal-square" class="w-4 h-4 text-emerald-500"></i> SYSTEM_TERMINAL // 调度控制台及在途反馈
                 </h4>
-                <button onclick="clearLogs()" class="text-xs font-mono text-slate-500 hover:text-rose-600 transition-colors flex items-center gap-1 bg-white hover:bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                <button onclick="clearLogs()" class="text-xs font-mono text-slate-500 hover:text-rose-600 transition flex items-center gap-1 bg-white hover:bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
                     <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> CLEAR
                 </button>
             </div>
-
             <div class="p-6 bg-slate-50/50 relative">
-                <!-- 终端装饰 -->
                 <div class="absolute top-0 left-6 w-[1px] h-full bg-slate-200"></div>
-
-                <div id="strategy-log" class="overflow-y-auto space-y-3 font-mono text-[13px] max-h-[360px] min-h-[200px] pr-2 relative z-10 pl-4">
-                    <!-- 记录将被注入此处 -->
-                </div>
+                <div id="strategy-log" class="overflow-y-auto space-y-3 font-mono text-[13px] max-h-[300px] min-h-[160px] pr-2 relative z-10 pl-4"></div>
             </div>
         </div>
-
     </div>
+</div>
 
-    <script>
-        // 初始化图标
-        lucide.createIcons();
+<script>
+    lucide.createIcons();
 
-        const logContainer = document.getElementById('strategy-log');
-        const strategyDisplay = document.getElementById('current-strategy');
-        const pressureGauge = document.getElementById('pressure-gauge');
-        const gridContainer = document.getElementById('dispatch-grid-container');
-        const connStatus = document.getElementById('conn-status');
-        const systemEpoch = document.getElementById('system-epoch');
+    // ========== 内嵌实验数据 ==========
+    const EMBEDDED_DATA = {
+        "predictions_time_series": {
+            "ground_truth": [3172.999755859375,2495.999755859375,1821.0,1313.0003662109375,1016.0,778.9999389648438,668.0,538.0,435.0000305175781,378.9999694824219,357.0000305175781,483.00006103515625,683.9999389648438,981.0001220703125,1448.0,2024.99951171875,3089.0009765625,4111.0,4606.99951171875,4750.0,5184.9990234375,5814.0,6103.001953125,5761.0009765625,6055.0009765625,6243.9990234375,6194.9990234375,6148.0,6049.9990234375,6010.99853515625,6060.9990234375,5749.00048828125,5770.0009765625,5973.99951171875,5535.99951171875,5250.0009765625,5617.00048828125,5622.0,5093.0,4640.0,4887.99951171875,4688.99951171875,4551.00048828125,4482.99951171875,4536.99951171875,4337.99951171875,3903.000732421875,3292.00048828125,2377.00048828125,2016.9998779296875],
+            "prediction_mamba_gnn": [4100.6640625,2953.198486328125,2085.420654296875,1450.315673828125,1049.170166015625,771.7300415039062,598.3267211914062,564.9037475585938,487.98663330078125,481.0771484375,510.3466491699219,526.178955078125,766.4049072265625,1133.5692138671875,1523.6512451171875,2067.3310546875,2709.635498046875,3985.913818359375,4862.7578125,5459.56640625,5079.220703125,5199.8359375,5697.9482421875,5696.3388671875,5535.9501953125,5764.00634765625,5884.77685546875,5912.29345703125,5865.2275390625,5894.55224609375,5914.0947265625,5830.576171875,5879.5966796875,5751.46484375,6008.33544921875,5768.4404296875,5524.1357421875,5655.85888671875,5587.30859375,5271.791015625,4828.302734375,4814.49267578125,4640.046875,4547.87841796875,4376.86328125,4330.0908203125,4089.786376953125,3816.029541015625,3127.66796875,2217.755615234375]
+        },
+        "top_predicted_regions_analysis": [
+            {"rank":1,"grid_id":82,"lon_center":117.0,"lat_center":36.66,"metrics":{"MAE":118.0903,"RMSE":163.0753,"total_true_volume":77926,"total_predicted_volume":79412},"time_series_data":{"true_values":[1296,952,755,561,436,363,297,258,224,200,176,225,314,425,579,791,1169,1546,1730,1936,2230,2478,2631,2552,2790,2694,2748,2713,2615,2574,2570,2323,2387,2507,2313,2221,2327,2257,1973,1771,1841,1789,1880,1760,1720,1706,1525,1325,827,646],"predicted_values":[1802.25,1259.55,760.45,514.9,417.74,306.48,268.32,263.22,234.67,246.98,254.99,234.5,304.29,494.16,647.6,812.8,1042.81,1476.81,1826.41,2056.63,1991.54,2184.01,2521.71,2516.35,2503.82,2585.35,2584.5,2601.2,2545.82,2499.18,2517.09,2488.6,2506.51,2382.28,2521.99,2461.59,2288.59,2308.39,2262.42,2075.9,1818.21,1783.49,1771.61,1846.97,1765.09,1695.8,1638.02,1525.03,1254.66,741.01]}},
+            {"rank":2,"grid_id":83,"lon_center":117.1333,"lat_center":36.66,"metrics":{"MAE":66.2718,"RMSE":84.2028,"total_true_volume":46372,"total_predicted_volume":47662},"time_series_data":{"true_values":[949,802,623,428,349,237,235,179,130,110,98,141,173,231,327,433,615,864,980,1022,1203,1267,1377,1261,1330,1420,1385,1406,1491,1478,1420,1360,1355,1403,1381,1345,1443,1477,1300,1163,1304,1219,1137,1077,1188,1113,1061,826,646,610],"predicted_values":[1143.61,870.8,709.77,563.2,382.71,289.59,192.55,180.05,157.27,127.52,136.81,146.39,235.2,295.32,388.54,489.21,599.22,784.17,1018.57,1177.35,1194.3,1315.07,1333.3,1385.88,1248.64,1311.57,1364.03,1318.14,1326.03,1419.39,1406.85,1382.97,1352.65,1375.65,1413.87,1396.13,1385.04,1437.39,1426.56,1372.98,1252.58,1279.05,1246.02,1177.98,1089.64,1104.77,1060.61,982.84,788.88,625.99]}},
+            {"rank":3,"grid_id":81,"lon_center":116.8667,"lat_center":36.66,"metrics":{"MAE":46.6123,"RMSE":60.4695,"total_true_volume":16175,"total_predicted_volume":16602},"time_series_data":{"true_values":[244,176,113,63,45,44,36,30,24,19,16,25,35,67,102,164,284,349,516,471,429,461,467,489,514,507,511,509,527,472,490,442,451,524,450,438,391,461,378,408,453,417,439,504,475,407,440,379,316,203],"predicted_values":[373.36,228.28,160.77,100.03,50.79,33.24,31.27,28.95,27.54,26.69,24.59,33.9,48.2,69.27,112.51,150.28,226.21,422.94,450.77,635.89,536.27,408.87,395.67,338.85,428.26,474.26,437.72,513.69,499.4,527.43,478.73,485.32,463.62,462.25,502.17,478.39,469.91,444.76,448.37,427.63,423.49,450.04,416.77,433.56,457.44,474.2,363.67,443.22,372.76,310.25]}},
+            {"rank":4,"grid_id":86,"lon_center":117.5333,"lat_center":36.66,"metrics":{"MAE":27.5959,"RMSE":36.595,"total_true_volume":9283,"total_predicted_volume":10106},"time_series_data":{"true_values":[115,89,67,46,32,30,20,11,8,12,9,6,20,35,100,118,166,228,222,201,186,269,324,294,266,346,317,302,310,358,365,358,335,288,274,256,314,299,252,234,218,233,207,226,240,231,182,130,79,55],"predicted_values":[143.36,94.3,65.68,49.73,32.32,21.98,20.73,14.68,9.92,12.61,27.27,19.48,17.63,35.17,69.56,161.27,186.73,258.99,306.21,302.89,225.52,251.5,328.09,362.76,304.81,305.28,330.59,284.27,281.74,311.05,346.65,311.62,344.67,354.18,317.77,317.61,312.7,330.29,319.18,277.19,260.17,252.52,231.74,215.97,231.31,237.09,233.98,178.96,125.81,71.16]}},
+            {"rank":5,"grid_id":84,"lon_center":117.2667,"lat_center":36.66,"metrics":{"MAE":23.5857,"RMSE":30.3854,"total_true_volume":9848,"total_predicted_volume":10020},"time_series_data":{"true_values":[124,102,63,41,43,29,28,19,18,14,24,20,32,60,89,146,241,295,309,301,302,326,326,283,321,336,333,329,282,306,272,281,271,305,253,235,293,286,262,287,262,235,241,252,237,216,189,147,106,76],"predicted_values":[182.81,116.66,82.92,49.28,30.5,26.63,21.89,21.89,17.41,18.54,19.06,31.76,34.42,50.51,82.34,134.29,194.82,293.05,363.64,337.45,291.27,256.06,263.48,264.44,251.64,291.39,307.42,315.85,323.9,297.8,301.58,284.65,288.91,293.39,307.44,281.01,269.82,278.75,295.74,265.92,274.48,270.74,255.26,236.63,249.02,238.25,219.51,192.44,146.87,96.49]}}
+        ]
+    };
 
-        let currentGridsData = [];
+    const GRID_NAMES = {82:"泉城广场及市中心",83:"省博物馆及CBD区域",81:"济南高新区齐鲁软件园",86:"遥墙国际机场周边",84:"万象城商圈"};
 
-        // ==========================================
-        // 核心数据 (保持原样)
-        // ==========================================
-        const injectedData = {
-            "evaluation_groups": {
-                "Mamba_GNN_Single": {
-                    "Mamba-GNN": { "mse": "188.83", "rmse": "13.74", "mae": "1.84", "mape": "24.47", "wmape": "10.97", "r2": "0.9906" }
-                }
-            },
-            "predictions_time_series": {
-                "ground_truth": [3172.999755859375, 2495.999755859375, 1821.0, 1313.0003662109375, 1016.0, 778.9999389648438, 668.0, 538.0, 435.0000305175781, 378.9999694824219, 357.0000305175781, 483.00006103515625, 683.9999389648438, 981.0001220703125, 1448.0, 2024.99951171875, 3089.0009765625, 4111.0, 4606.99951171875, 4750.0, 5184.9990234375, 5814.0, 6103.001953125, 5761.0009765625, 6055.0009765625, 6243.9990234375, 6194.9990234375, 6148.0, 6049.9990234375, 6010.99853515625, 6060.9990234375, 5749.00048828125, 5770.0009765625, 5973.99951171875, 5535.99951171875, 5250.0009765625, 5617.00048828125, 5622.0, 5093.0, 4640.0, 4887.99951171875, 4688.99951171875, 4551.00048828125, 4482.99951171875, 4536.99951171875, 4337.99951171875, 3903.000732421875, 3292.00048828125, 2377.00048828125, 2016.9998779296875],
-                "prediction_mamba_gnn": [4100.6640625, 2953.198486328125, 2085.420654296875, 1450.315673828125, 1049.170166015625, 771.7300415039062, 598.3267211914062, 564.9037475585938, 487.98663330078125, 481.0771484375, 510.3466491699219, 526.178955078125, 766.4049072265625, 1133.5692138671875, 1523.6512451171875, 2067.3310546875, 2709.635498046875, 3985.913818359375, 4862.7578125, 5459.56640625, 5079.220703125, 5199.8359375, 5697.9482421875, 5696.3388671875, 5535.9501953125, 5764.00634765625, 5884.77685546875, 5912.29345703125, 5865.2275390625, 5894.55224609375, 5914.0947265625, 5830.576171875, 5879.5966796875, 5751.46484375, 6008.33544921875, 5768.4404296875, 5524.1357421875, 5655.85888671875, 5587.30859375, 5271.791015625, 4828.302734375, 4814.49267578125, 4640.046875, 4547.87841796875, 4376.86328125, 4330.0908203125, 4089.786376953125, 3816.029541015625, 3127.66796875, 2217.755615234375]
-            },
-            "top_predicted_regions_analysis": [
-                { "rank": 1, "grid_id": 82, "lon_center": 117.0, "lat_center": 36.66, "time_series_data": { "true_values": [1296.0, 952.0, 755.0, 561.0, 436.0, 363.0, 297.0, 258.0, 224.0, 200.0, 176.0, 225.0, 314.0, 425.0, 579.0, 791.0, 1169.0, 1546.0, 1730.0, 1936.0, 2230.0, 2478.0, 2631.0, 2552.0, 2790.0, 2694.0, 2748.0, 2713.0, 2615.0, 2574.0, 2570.0, 2323.0, 2387.0, 2507.0, 2313.0, 2221.0, 2327.0, 2257.0, 1973.0, 1771.0, 1841.0, 1789.0, 1880.0, 1760.0, 1720.0, 1706.0, 1525.0, 1325.0, 827.0, 646.0], "predicted_values": [1802.25, 1259.55, 760.45, 514.9, 417.74, 306.48, 268.32, 263.22, 234.67, 246.98, 254.99, 234.5, 304.29, 494.16, 647.6, 812.8, 1042.81, 1476.81, 1826.41, 2056.63, 1991.54, 2184.01, 2521.71, 2516.35, 2503.82, 2585.35, 2584.5, 2601.2, 2545.82, 2499.18, 2517.09, 2488.6, 2506.51, 2382.28, 2521.99, 2461.59, 2288.59, 2308.39, 2262.42, 2075.9, 1818.21, 1783.49, 1771.61, 1846.97, 1765.09, 1695.8, 1638.02, 1525.03, 1254.66, 741.01] } },
-                { "rank": 2, "grid_id": 83, "lon_center": 117.1333, "lat_center": 36.66, "time_series_data": { "true_values": [949.0, 802.0, 623.0, 428.0, 349.0, 237.0, 235.0, 179.0, 130.0, 110.0, 98.0, 141.0, 173.0, 231.0, 327.0, 433.0, 615.0, 864.0, 980.0, 1022.0, 1203.0, 1267.0, 1377.0, 1261.0, 1330.0, 1420.0, 1385.0, 1406.0, 1491.0, 1478.0, 1420.0, 1360.0, 1355.0, 1403.0, 1381.0, 1345.0, 1443.0, 1477.0, 1300.0, 1163.0, 1304.0, 1219.0, 1137.0, 1077.0, 1188.0, 1113.0, 1061.0, 826.0, 646.0, 610.0], "predicted_values": [1143.61, 870.8, 709.77, 563.2, 382.71, 289.59, 192.55, 180.05, 157.27, 127.52, 136.81, 146.39, 235.2, 295.32, 388.54, 489.21, 599.22, 784.17, 1018.57, 1177.35, 1194.3, 1315.07, 1333.3, 1385.88, 1248.64, 1311.57, 1364.03, 1318.14, 1326.03, 1419.39, 1406.85, 1382.97, 1352.65, 1375.65, 1413.87, 1396.13, 1385.04, 1437.39, 1426.56, 1372.98, 1252.58, 1279.05, 1246.02, 1177.98, 1089.64, 1104.77, 1060.61, 982.84, 788.88, 625.99] } },
-                { "rank": 3, "grid_id": 81, "lon_center": 116.8667, "lat_center": 36.66, "time_series_data": { "true_values": [244.0, 176.0, 113.0, 63.0, 45.0, 44.0, 36.0, 30.0, 24.0, 19.0, 16.0, 25.0, 35.0, 67.0, 102.0, 164.0, 284.0, 349.0, 516.0, 471.0, 429.0, 461.0, 467.0, 489.0, 514.0, 507.0, 511.0, 509.0, 527.0, 472.0, 490.0, 442.0, 451.0, 524.0, 450.0, 438.0, 391.0, 461.0, 378.0, 408.0, 453.0, 417.0, 439.0, 504.0, 475.0, 407.0, 440.0, 379.0, 316.0, 203.0], "predicted_values": [373.36, 228.28, 160.77, 100.03, 50.79, 33.24, 31.27, 28.95, 27.54, 26.69, 24.59, 33.9, 48.2, 69.27, 112.51, 150.28, 226.21, 422.94, 450.77, 635.89, 536.27, 408.87, 395.67, 338.85, 428.26, 474.26, 437.72, 513.69, 499.4, 527.43, 478.73, 485.32, 463.62, 462.25, 502.17, 478.39, 469.91, 444.76, 448.37, 427.63, 423.49, 450.04, 416.77, 433.56, 457.44, 474.2, 363.67, 443.22, 372.76, 310.25] } },
-                { "rank": 4, "grid_id": 86, "lon_center": 117.5333, "lat_center": 36.66, "time_series_data": { "true_values": [115.0, 89.0, 67.0, 46.0, 32.0, 30.0, 20.0, 11.0, 8.0, 12.0, 9.0, 6.0, 20.0, 35.0, 100.0, 118.0, 166.0, 228.0, 222.0, 201.0, 186.0, 269.0, 324.0, 294.0, 266.0, 346.0, 317.0, 302.0, 310.0, 358.0, 365.0, 358.0, 335.0, 288.0, 274.0, 256.0, 314.0, 299.0, 252.0, 234.0, 218.0, 233.0, 207.0, 226.0, 240.0, 231.0, 182.0, 130.0, 79.0, 55.0], "predicted_values": [143.36, 94.3, 65.68, 49.73, 32.32, 21.98, 20.73, 14.68, 9.92, 12.61, 27.27, 19.48, 17.63, 35.17, 69.56, 161.27, 186.73, 258.99, 306.21, 302.89, 225.52, 251.5, 328.09, 362.76, 304.81, 305.28, 330.59, 284.27, 281.74, 311.05, 346.65, 311.62, 344.67, 354.18, 317.77, 317.61, 312.7, 330.29, 319.18, 277.19, 260.17, 252.52, 231.74, 215.97, 231.31, 237.09, 233.98, 178.96, 125.81, 71.16] } },
-                { "rank": 5, "grid_id": 84, "lon_center": 117.2667, "lat_center": 36.66, "time_series_data": { "true_values": [124.0, 102.0, 63.0, 41.0, 43.0, 29.0, 28.0, 19.0, 18.0, 14.0, 24.0, 20.0, 32.0, 60.0, 89.0, 146.0, 241.0, 295.0, 309.0, 301.0, 302.0, 326.0, 326.0, 283.0, 321.0, 336.0, 333.0, 329.0, 282.0, 306.0, 272.0, 281.0, 271.0, 305.0, 253.0, 235.0, 293.0, 286.0, 262.0, 287.0, 262.0, 235.0, 241.0, 252.0, 237.0, 216.0, 189.0, 147.0, 106.0, 76.0], "predicted_values": [182.81, 116.66, 82.92, 49.28, 30.5, 26.63, 21.89, 21.89, 17.41, 18.54, 19.06, 31.76, 34.42, 50.51, 82.34, 134.29, 194.82, 293.05, 363.64, 337.45, 291.27, 256.06, 263.48, 264.44, 251.64, 291.39, 307.42, 315.85, 323.9, 297.8, 301.58, 284.65, 288.91, 293.39, 307.44, 281.01, 269.82, 278.75, 295.74, 265.92, 274.48, 270.74, 255.26, 236.63, 249.02, 238.25, 219.51, 192.44, 146.87, 96.49] } }
-            ]
-        };
+    // ========== 网格坐标系 ==========
+    const lonMin = 116.0, lonMax = 118.0, latMin = 36.0, latMax = 37.8;
+    const lonStep = (lonMax - lonMin) / 15;
+    const latStep = (latMax - latMin) / 15;
 
-        const GRID_NAMES = {
-            82: "泉城广场及市中心",
-            83: "省博物馆及CBD区域",
-            81: "济南高新区齐鲁软件园",
-            86: "遥墙国际机场周边",
-            84: "万象城商圈"
-        };
+    function getGridId(lng, lat) {
+        if (lng < lonMin || lng > lonMax || lat < latMin || lat > latMax) return -1;
+        const x = Math.min(14, Math.max(0, Math.floor((lng - lonMin) / lonStep)));
+        const y = Math.min(14, Math.max(0, Math.floor((lat - latMin) / latStep)));
+        return y * 15 + x;
+    }
 
-        /**
-         * 从 localStorage 加载并渲染历史日志
-         */
-        function loadStoredLogs() {
-            let logs = [];
+    function getGridCenter(gridId) {
+        const y = Math.floor(gridId / 15);
+        const x = gridId % 15;
+        return { lng: lonMin + x * lonStep + lonStep / 2, lat: latMin + y * latStep + latStep / 2 };
+    }
+
+    // ========== Leaflet 地图 ==========
+    let map = null;
+    let gridPolygons = [];
+    let labelMarkersGroup = null;
+    let showHeatmap = true;
+    let showLabels = true;
+    let tickIndex = 0;
+    let lockedGridId = null;        // 当前锁定的网格 ID
+    let pressedGridId = null;       // 当前按住但未锁定的网格 ID
+    let clickTimers = {};           // 单击/双击判别计时器
+    let savedMapView = null;        // 锁定前的地图视野 { center, zoom }
+
+    function initMap() {
+        map = L.map('dispatchMap', { zoomControl: true, attributionControl: true, renderer: L.canvas() })
+            .setView([36.66, 117.0], 11);
+
+        L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+            attribution: '&copy; 高德地图 (AMap)',
+            subdomains: ['1', '2', '3', '4'],
+            maxZoom: 18
+        }).addTo(map);
+
+        labelMarkersGroup = L.layerGroup().addTo(map);
+
+        drawAllGrids();
+        updateHeatmapColors();
+        updatePredictionLabels();
+    }
+
+    function drawAllGrids() {
+        gridPolygons = [];
+        for (let i = 0; i < 225; i++) {
+            const gridY = Math.floor(i / 15);
+            const gridX = i % 15;
+            const cellLatMin = latMin + gridY * latStep;
+            const cellLatMax = cellLatMin + latStep;
+            const cellLonMin = lonMin + gridX * lonStep;
+            const cellLonMax = cellLonMin + lonStep;
+
+            const polygon = L.rectangle([[cellLatMin, cellLonMin], [cellLatMax, cellLonMax]], {
+                color: "rgba(239, 68, 68, 0.10)",
+                weight: 1,
+                fillColor: "#fee2e2",
+                fillOpacity: 0.0,
+                interactive: true
+            }).addTo(map);
+
+            const center = getGridCenter(i);
+            // 按住显示 / 松开隐藏 / 双击锁定 / 单击解锁
+            polygon.on('mousedown', () => onGridPress(i, center.lng, center.lat, polygon));
+            polygon.on('mouseup', () => onGridRelease(i, polygon));
+            polygon.on('mouseleave', () => onGridRelease(i, polygon));
+            polygon.on('click', (e) => { L.DomEvent.stopPropagation(e); onGridSingleClick(i, center.lng, center.lat, polygon); });
+            polygon.on('dblclick', (e) => { L.DomEvent.stopPropagation(e); onGridDblClick(i, center.lng, center.lat, polygon); });
+            // 移动端触摸支持
+            polygon.on('touchstart', () => onGridPress(i, center.lng, center.lat, polygon));
+            polygon.on('touchend', () => onGridRelease(i, polygon));
+
+            gridPolygons.push(polygon);
+        }
+    }
+
+    function getLivePrediction(gridId) {
+        const regions = EMBEDDED_DATA.top_predicted_regions_analysis || [];
+        const region = regions.find(r => r.grid_id === gridId);
+        if (region && region.time_series_data && region.time_series_data.predicted_values) {
+            return Math.round(region.time_series_data.predicted_values[tickIndex] || 0);
+        }
+        const baseGlobal = EMBEDDED_DATA.predictions_time_series?.prediction_mamba_gnn?.[tickIndex] || 2500;
+        return Math.max(1, Math.round((baseGlobal / 225) * (1 + Math.sin(tickIndex * 0.2 + gridId * 0.15) * 0.35)));
+    }
+
+    function getDemandColor(predVal) {
+        const ratio = Math.min(1, predVal / 50);
+        if (ratio > 0.85) return '#991b1b';
+        if (ratio > 0.65) return '#b91c1c';
+        if (ratio > 0.45) return '#ef4444';
+        if (ratio > 0.25) return '#f87171';
+        if (ratio > 0.08) return '#fca5a5';
+        return '#fee2e2';
+    }
+
+    function updateHeatmapColors() {
+        for (let i = 0; i < 225; i++) {
+            const polygon = gridPolygons[i];
+            if (!polygon) continue;
             try {
-                logs = JSON.parse(localStorage.getItem('mamba_dispatch_logs')) || [];
-            } catch (e) {
-                console.error("加载历史调度日志失败", e);
-            }
-
-            logContainer.innerHTML = '';
-            logs.forEach(log => {
-                renderLogDOM(log.msg, log.type, log.time, false);
-            });
-        }
-
-        /**
-         * 辅助渲染单条日志到 DOM 中 (浅色终端风格)
-         */
-        function renderLogDOM(msg, type, timeStr, animate = true) {
-            const div = document.createElement('div');
-
-            let textColor = "text-slate-600";
-            let prefixIcon = `<span class="text-slate-400 mr-2">></span>`;
-
-            if (type === 'danger') {
-                textColor = "text-rose-600";
-                prefixIcon = `<span class="text-rose-500 mr-2 animate-pulse">!</span>`;
-            } else if (type === 'success') {
-                textColor = "text-emerald-600";
-                prefixIcon = `<span class="text-emerald-500 mr-2">✓</span>`;
-            } else if (type === 'system') {
-                textColor = "text-indigo-600";
-                prefixIcon = `<span class="text-indigo-500 mr-2">#</span>`;
-            }
-
-            if (animate) {
-                div.className = `flex items-start opacity-0 transition-all duration-300 transform translate-y-2 ${textColor}`;
-            } else {
-                div.className = `flex items-start ${textColor}`;
-            }
-
-            div.innerHTML = `
-                <div class="flex-shrink-0 mt-0.5">${prefixIcon}</div>
-                <div>
-                    <span class="text-slate-400 mr-2 text-[11px]">[${timeStr}]</span>
-                    <span class="leading-relaxed break-all font-medium">${msg}</span>
-                </div>
-            `;
-            logContainer.prepend(div);
-
-            if (animate) {
-                setTimeout(() => {
-                    div.classList.remove('opacity-0', 'translate-y-2');
-                }, 30);
-            }
-        }
-
-        /**
-         * 追加可视化调度日志并持久化保存
-         */
-        function addLog(msg, type = 'info') {
-            const timeStr = new Date().toLocaleTimeString([], { hour12: false });
-            renderLogDOM(msg, type, timeStr, true);
-
-            let logs = [];
-            try {
-                logs = JSON.parse(localStorage.getItem('mamba_dispatch_logs')) || [];
-            } catch (e) {}
-
-            logs.push({ msg, type, time: timeStr });
-            if (logs.length > 50) logs.shift();
-            localStorage.setItem('mamba_dispatch_logs', JSON.stringify(logs));
-
-            if (logContainer.children.length > 50) {
-                logContainer.removeChild(logContainer.lastChild);
-            }
-        }
-
-        /**
-         * 清空全部日志
-         */
-        function clearLogs() {
-            logContainer.innerHTML = '';
-            localStorage.removeItem('mamba_dispatch_logs');
-            addLog("SYS_CLEAR: 控制台日志已被手动重置", 'system');
-        }
-
-        // 核心监听：订阅 localStorage
-        window.addEventListener('storage', (event) => {
-            if (event.key === 'mamba_dispatch_logs_new') {
-                try {
-                    const newLog = JSON.parse(event.newValue);
-                    if (newLog && newLog.msg) {
-                        renderLogDOM(newLog.msg, newLog.type, newLog.time, true);
-                    }
-                } catch(e) {}
-            }
-        });
-
-        // ==========================================
-        // 补全修复逻辑部分：调度数据更新及循环模拟
-        // ==========================================
-        function updateDispatchStrategy(payload) {
-            const { system_time, target_time, grids } = payload;
-
-            if (systemEpoch) {
-                systemEpoch.innerText = system_time;
-            }
-
-            gridContainer.innerHTML = '';
-            let totalPressure = 0;
-            let highRiskCount = 0;
-            let highestRiskGrid = null;
-
-            // 缺口降序排列
-            grids.sort((a, b) => b.gap - a.gap);
-
-            grids.forEach(grid => {
-                const isHighRisk = grid.gap > 50;
-                if (isHighRisk) highRiskCount++;
-                totalPressure += grid.gap;
-
-                if (!highestRiskGrid || grid.gap > highestRiskGrid.gap) {
-                    highestRiskGrid = grid;
-                }
-
-                const card = document.createElement('div');
-
-                // 重新设计的卡片 UI
-                if (isHighRisk) {
-                    card.className = `group relative bg-white p-5 rounded-2xl border-2 border-rose-200 hover:border-rose-300 shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 overflow-hidden`;
-                    card.innerHTML = `
-                        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-400 to-rose-600 animate-pulse"></div>
-                        <div class="absolute -right-4 -top-4 w-16 h-16 bg-rose-50 rounded-full blur-2xl group-hover:bg-rose-100 transition-colors"></div>
-
-                        <div class="relative z-10">
-                            <div class="flex justify-between items-start mb-4">
-                                <div>
-                                    <div class="font-bold text-slate-800 text-sm flex items-center gap-1.5 mb-1">
-                                        <i data-lucide="map-pin" class="w-4 h-4 text-rose-500"></i>
-                                        Grid ${grid.id}
-                                    </div>
-                                    <div class="text-[11px] text-slate-500 truncate max-w-[140px]" title="${grid.name}">${grid.name}</div>
-                                </div>
-                                <div class="bg-rose-50 border border-rose-100 px-2.5 py-1 rounded-lg text-center shadow-sm">
-                                    <div class="text-[10px] text-rose-400 font-bold uppercase">运力缺口</div>
-                                    <div class="text-lg font-black text-rose-600 font-mono leading-none mt-0.5">+${grid.gap}</div>
-                                </div>
-                            </div>
-
-                            <div class="grid grid-cols-2 gap-2 mb-5">
-                                <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                    <div class="text-[10px] text-slate-400 mb-0.5">预测需求</div>
-                                    <div class="font-mono text-sm font-semibold text-slate-700">${grid.predicted}</div>
-                                </div>
-                                <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                    <div class="text-[10px] text-slate-400 mb-0.5">预估供给</div>
-                                    <div class="font-mono text-sm font-semibold text-slate-700">${grid.supply}</div>
-                                </div>
-                            </div>
-
-                            <button onclick="dispatchToGrid(${grid.id}, '${grid.name}', ${grid.gap}, ${grid.lon}, ${grid.lat})" class="w-full py-2.5 rounded-xl text-xs font-bold transition-all bg-rose-500 hover:bg-rose-600 text-white shadow-md shadow-rose-200 hover:shadow-rose-300 flex items-center justify-center gap-1.5">
-                                <i data-lucide="send" class="w-3.5 h-3.5"></i> 发送紧急调度令
-                            </button>
-                        </div>
-                    `;
+                if (showHeatmap) {
+                    const predVal = getLivePrediction(i);
+                    const color = getDemandColor(predVal);
+                    const ratio = Math.min(1, predVal / 120);
+                    polygon.setStyle({
+                        fillColor: color,
+                        fillOpacity: predVal > 0 ? (0.12 + ratio * 0.55) : 0.02,
+                        color: "rgba(220, 38, 38, 0.18)"
+                    });
                 } else {
-                    card.className = `group relative bg-white p-5 rounded-2xl border border-slate-200 hover:border-indigo-200 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1`;
-                    card.innerHTML = `
-                        <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <div class="font-bold text-slate-800 text-sm flex items-center gap-1.5 mb-1">
-                                    <i data-lucide="map-pin" class="w-4 h-4 text-indigo-500 group-hover:text-indigo-600 transition-colors"></i>
-                                    Grid ${grid.id}
-                                </div>
-                                <div class="text-[11px] text-slate-500 truncate max-w-[140px]" title="${grid.name}">${grid.name}</div>
-                            </div>
-                            <div class="bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg text-center">
-                                <div class="text-[10px] text-slate-400 font-bold uppercase">状态</div>
-                                <div class="text-sm font-bold text-slate-600 font-mono leading-none mt-1">平衡</div>
-                            </div>
-                        </div>
-
-                        <div class="flex items-center gap-3 mb-5 text-[11px] text-slate-500">
-                            <div class="flex-1">需求: <span class="font-mono font-medium text-slate-700">${grid.predicted}</span></div>
-                            <div class="w-[1px] h-3 bg-slate-200"></div>
-                            <div class="flex-1 text-right">供给: <span class="font-mono font-medium text-slate-700">${grid.supply}</span></div>
-                        </div>
-
-                        <button onclick="dispatchToGrid(${grid.id}, '${grid.name}', ${grid.gap}, ${grid.lon}, ${grid.lat})" class="w-full py-2 rounded-xl text-xs font-medium transition-all bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 flex items-center justify-center gap-1.5">
-                            <i data-lucide="radio" class="w-3.5 h-3.5"></i> 常规区域广播
-                        </button>
-                    `;
+                    polygon.setStyle({ fillOpacity: 0.0, color: "rgba(220, 38, 38, 0.06)" });
                 }
-                gridContainer.appendChild(card);
+            } catch(e) {}
+        }
+    }
+
+    function updatePredictionLabels() {
+        labelMarkersGroup.clearLayers();
+        if (!showLabels) return;
+
+        const regions = EMBEDDED_DATA.top_predicted_regions_analysis || [];
+        regions.forEach(reg => {
+            const gridId = reg.grid_id;
+            const predVal = getLivePrediction(gridId);
+            const center = getGridCenter(gridId);
+            const gridName = GRID_NAMES[gridId] || `Grid ${gridId}`;
+
+            const ratio = Math.min(1, predVal / 120);
+            const bgColor = ratio > 0.65 ? 'rgb(185 28 28)' : ratio > 0.25 ? 'rgb(220 38 38)' : 'rgb(239 68 68)';
+
+            const icon = L.divIcon({
+                html: `<div class="flex flex-col items-center justify-center px-2 py-1 rounded-md shadow-lg text-[9px] font-bold border border-white/20 leading-tight" style="min-width:72px;background:${bgColor};color:#fff;transform:translate(-50%,-50%);">
+                    <span class="truncate block w-full text-center opacity-90">${gridName}</span>
+                    <span class="mt-0.5 font-mono block text-center font-extrabold text-[10px]">${predVal} 单</span>
+                </div>`,
+                className: '', iconSize: [76, 30], iconAnchor: [38, 15]
             });
+            labelMarkersGroup.addLayer(L.marker([center.lat, center.lng], { icon, interactive: false }));
+        });
+    }
 
-            // 更新压力指数
-            const pressurePercent = Math.min(100, Math.round((totalPressure / 1000) * 100));
-            if (pressureGauge) {
-                pressureGauge.innerText = `${pressurePercent}%`;
-                pressureGauge.className = `text-4xl font-black font-mono tracking-tighter ${pressurePercent > 60 ? 'text-rose-500' : 'text-indigo-600'}`;
-            }
+    // ========== 网格交互：按住显示 / 松开隐藏 / 双击锁定 / 单击解锁 ==========
 
-            // 更新主策略建议文本
-            if (highestRiskGrid && highestRiskGrid.gap > 0) {
-                strategyDisplay.innerHTML = `检测到局部高压。建议立即向 <span class="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 mx-1 font-bold">${highestRiskGrid.name} (Grid ${highestRiskGrid.id})</span> 调拨 <span class="text-rose-600 font-black font-mono mx-0.5">${highestRiskGrid.gap}</span> 辆空车以平抑峰值。`;
-                strategyDisplay.className = "text-slate-700 text-sm mt-1 leading-relaxed";
-            } else {
-                strategyDisplay.innerHTML = "全网供需平衡，当前未检测到异常波动，维持常规巡游策略即可。";
-                strategyDisplay.className = "text-emerald-700 text-sm mt-1 font-medium";
-            }
+    function buildGridTooltipHTML(gridId, predVal, trueVal) {
+        const ratio = Math.min(1, predVal / 120);
+        const statusText = ratio > 0.65 ? '<span class="text-rose-600 font-extrabold">极端溢出</span>' :
+                           ratio > 0.25 ? '<span class="text-amber-600 font-bold">需求上涨</span>' :
+                           '<span class="text-emerald-600 font-bold">供需充沛</span>';
+        const gridName = GRID_NAMES[gridId] || `Grid ${gridId}`;
+        const isLocked = (lockedGridId === gridId);
+        const lockHint = isLocked ? '<div class="text-[10px] text-blue-500 font-bold mt-1">&#128274; 已锁定 &middot; 单击解除</div>' :
+                                    '<div class="text-[10px] text-slate-400 italic mt-1">双击锁定 &middot; 按住查看</div>';
+        return '<div class="text-xs space-y-1 p-2 bg-white text-slate-800 rounded-lg shadow-xl border border-slate-200" style="min-width:170px;">' +
+            '<div class="font-extrabold text-rose-500 flex items-center gap-1">' + gridName + ' <span class="text-[10px] text-slate-400 font-normal">Grid ' + gridId + '</span></div>' +
+            '<div class="border-t border-slate-100 my-1"></div>' +
+            '<div>Mamba 预测: <span class="font-mono font-bold text-indigo-600">' + predVal + ' 单/秒</span></div>' +
+            '<div>历史同期: <span class="font-mono text-slate-500">' + trueVal + ' 单/秒</span></div>' +
+            '<div>状态: ' + statusText + '</div>' + lockHint + '</div>';
+    }
 
-            lucide.createIcons();
+    function showGridTooltip(gridId, lng, lat, polygon) {
+        const predVal = getLivePrediction(gridId);
+        const trueVal = getTrueValue(gridId);
+        polygon.setStyle({ color: "#ef4444", weight: 2.5 });
+        // 只在 tooltip 不存在时绑定一次；后续用 setTooltipContent 刷新内容
+        if (!polygon.getTooltip()) {
+            polygon.bindTooltip(buildGridTooltipHTML(gridId, predVal, trueVal), {
+                sticky: true, opacity: 0.98, direction: 'top'
+            });
+        } else {
+            polygon.setTooltipContent(buildGridTooltipHTML(gridId, predVal, trueVal));
+        }
+        polygon.openTooltip();
+    }
+
+    function onGridPress(gridId, lng, lat, polygon) {
+        pressedGridId = gridId;
+        showGridTooltip(gridId, lng, lat, polygon);
+    }
+
+    function onGridRelease(gridId, polygon) {
+        if (lockedGridId !== gridId) {
+            pressedGridId = null;
+            polygon.closeTooltip();
+            polygon.setStyle({
+                color: showHeatmap ? "rgba(220, 38, 38, 0.18)" : "rgba(220, 38, 38, 0.06)",
+                weight: 1,
+                dashArray: null
+            });
+        }
+    }
+
+    function onGridSingleClick(gridId, lng, lat, polygon) {
+        if (clickTimers[gridId]) {
+            clearTimeout(clickTimers[gridId]);
+            delete clickTimers[gridId];
+            return;
         }
 
-        function dispatchToGrid(gridId, gridName, gap, lon, lat) {
-            if (gap <= 0) {
-                addLog(`网格 [${gridName}] 运力充足，无需强制调度。已记录常规广播操作。`, 'system');
+        clickTimers[gridId] = setTimeout(() => {
+            delete clickTimers[gridId];
+
+            if (lockedGridId === gridId) {
+                lockedGridId = null;
+                polygon.closeTooltip();
+                polygon.setStyle({
+                    color: showHeatmap ? "rgba(220, 38, 38, 0.18)" : "rgba(220, 38, 38, 0.06)",
+                    weight: 1,
+                    dashArray: null
+                });
+                // 恢复原始地图视野
+                if (savedMapView && map) {
+                    map.setView(savedMapView.center, savedMapView.zoom);
+                    savedMapView = null;
+                }
+                const name = GRID_NAMES[gridId] || 'Grid ' + gridId;
+                addLog('[UNLOCK] 网格 [' + name + '] 已解除锁定。', 'system');
                 return;
             }
 
-            const alertData = {
-                grid_id: gridId,
-                grid_name: gridName,
-                count: gap,
-                lon: lon,
-                lat: lat,
-                target_time: new Date(Date.now() + 30 * 60000).toLocaleTimeString('zh-CN', { hour12: false }),
-                timestamp: Date.now()
-            };
+            const predVal = getLivePrediction(gridId);
+            const supply = Math.round(predVal * 0.75 + Math.floor(Math.random() * 40));
+            const gap = Math.max(0, predVal - supply);
+            const name = GRID_NAMES[gridId] || 'Grid ' + gridId;
 
-            localStorage.setItem('mamba_dispatch_alert', JSON.stringify(alertData));
-            addLog(`[ACTION_REQ] 已向全网空载车辆广播前往 <span class="text-rose-600 font-bold">${gridName} (Grid ${gridId})</span> 的调度令 (需补口: ${gap}辆)。等待底层节点响应...`, 'danger');
-        }
-
-        function simulateDispatchOptimization() {
-            addLog("INIT: 启动全网运力一键调优 (Mamba-GNN Global Matrix Optimization)...", "system");
-            setTimeout(() => {
-                addLog("SUCCESS: 矩阵计算完成。已重排全局网格权重，下发 3 份并行引导预案至调度池。", "success");
-            }, 800);
-        }
-
-        function runHardcodedSimulation() {
-            const topRegions = injectedData.top_predicted_regions_analysis;
-            const totalSteps = topRegions[0].time_series_data.predicted_values.length;
-
-            const renderMockTick = () => {
-                const tick = Math.floor(Date.now() / 1000) % totalSteps;
-                // 此处获取的就是计算机本地的系统时间
-                const now = new Date();
-                const sysTStr = now.toLocaleTimeString('zh-CN', { hour12: false });
-                const targetTime = new Date(now.getTime() + 30 * 60000);
-                const targetTStr = targetTime.toLocaleTimeString('zh-CN', { hour12: false });
-
-                const mockGrids = topRegions.map(region => {
-                    const predicted = Math.round(region.time_series_data.predicted_values[tick]);
-                    const supply = Math.round(predicted * 0.8) + Math.floor(Math.random() * 50);
-                    const gap = Math.max(0, predicted - supply);
-
-                    return {
-                        id: region.grid_id,
-                        name: GRID_NAMES[region.grid_id] || `Grid ${region.grid_id}`,
-                        lon: region.lon_center,
-                        lat: region.lat_center,
-                        predicted: predicted,
-                        supply: supply,
-                        gap: gap
-                    };
-                });
-
-                updateDispatchStrategy({
-                    system_time: sysTStr,
-                    target_time: targetTStr,
-                    grids: mockGrids
-                });
-            };
-
-            renderMockTick();
-            setInterval(renderMockTick, 1000); // 确保每秒刷新获取本地时间
-        }
-
-        document.addEventListener("DOMContentLoaded", () => {
-            loadStoredLogs();
-
-            let storedLogs = [];
-            try { storedLogs = JSON.parse(localStorage.getItem('mamba_dispatch_logs')) || []; } catch (e) {}
-
-            if (storedLogs.length === 0) {
-                addLog("SYS_BOOT: 调度大厅控制台已就绪，正在监听底层硬编码推演数据流...", "system");
+            if (isReadonly) {
+                addLog('[LOCKED] 只读模式：无法对网格 [' + name + '] 下发调度令。', 'system');
+                if (map) map.setView([lat, lng], 13);
+                return;
             }
 
-            runHardcodedSimulation();
+            if (gap > 0) {
+                dispatchToGrid(gridId, name, gap, lng, lat);
+            } else {
+                addLog('网格 [' + name + '] 运力充足，无需强制调度。', 'system');
+            }
+        }, 300);
+    }
+
+    function onGridDblClick(gridId, lng, lat, polygon) {
+        if (clickTimers[gridId]) {
+            clearTimeout(clickTimers[gridId]);
+            delete clickTimers[gridId];
+        }
+
+        if (lockedGridId === gridId) {
+            // 已锁定 → 解锁并恢复原视野
+            lockedGridId = null;
+            polygon.closeTooltip();
+            polygon.setStyle({
+                color: showHeatmap ? "rgba(220, 38, 38, 0.18)" : "rgba(220, 38, 38, 0.06)",
+                weight: 1,
+                dashArray: null
+            });
+            if (savedMapView && map) {
+                map.setView(savedMapView.center, savedMapView.zoom);
+                savedMapView = null;
+            }
+            const name = GRID_NAMES[gridId] || 'Grid ' + gridId;
+            addLog('[UNLOCK] 网格 [' + name + '] 已解除锁定，视野已恢复。', 'system');
+        } else {
+            // 解锁之前的锁定网格（不恢复视野，因为马上要锁定新的）
+            if (lockedGridId !== null) {
+                const oldPolygon = gridPolygons[lockedGridId];
+                if (oldPolygon) {
+                    oldPolygon.closeTooltip();
+                    oldPolygon.setStyle({
+                        color: showHeatmap ? "rgba(220, 38, 38, 0.18)" : "rgba(220, 38, 38, 0.06)",
+                        weight: 1,
+                        dashArray: null
+                    });
+                }
+            }
+            // 保存当前视野，然后放大到该网格
+            if (map) {
+                savedMapView = { center: map.getCenter(), zoom: map.getZoom() };
+                map.fitBounds(polygon.getBounds(), { padding: [30, 30], maxZoom: 16 });
+            }
+            lockedGridId = gridId;
+            pressedGridId = null;  // 锁定后清除按住状态
+            showGridTooltip(gridId, lng, lat, polygon);
+            polygon.setStyle({ color: "#3b82f6", weight: 3, dashArray: "6,4" });
+            const name = GRID_NAMES[gridId] || 'Grid ' + gridId;
+            addLog('[LOCK] 网格 [' + name + '] 已锁定并放大，单击可解除。', 'system');
+        }
+    }
+
+    function getTrueValue(gridId) {
+        const regions = EMBEDDED_DATA.top_predicted_regions_analysis || [];
+        const region = regions.find(r => r.grid_id === gridId);
+        if (region && region.time_series_data && region.time_series_data.true_values) {
+            return Math.round(region.time_series_data.true_values[tickIndex] || 0);
+        }
+        return Math.max(1, Math.round(getLivePrediction(gridId) * (1 + Math.sin(tickIndex) * 0.1)));
+    }
+
+    function toggleHeatmap() {
+        showHeatmap = document.getElementById('heatmap-toggle').checked;
+        updateHeatmapColors();
+    }
+
+    function toggleLabels() {
+        showLabels = document.getElementById('label-toggle').checked;
+        updatePredictionLabels();
+    }
+
+    // ========== 调度卡片面板 ==========
+    const logContainer = document.getElementById('strategy-log');
+    const strategyDisplay = document.getElementById('current-strategy');
+    const pressureGauge = document.getElementById('pressure-gauge');
+    const gridContainer = document.getElementById('dispatch-grid-container');
+
+    function updateDispatchPanels() {
+        const regions = EMBEDDED_DATA.top_predicted_regions_analysis || [];
+        if (regions.length === 0) return;
+
+        const grids = regions.map(region => {
+            const predVal = Math.round(region.time_series_data.predicted_values[tickIndex]);
+            const supply = Math.round(predVal * 0.75) + Math.floor(Math.random() * 40);
+            const gap = Math.max(0, predVal - supply);
+            return {
+                id: region.grid_id,
+                name: GRID_NAMES[region.grid_id] || `Grid ${region.grid_id}`,
+                lon: region.lon_center,
+                lat: region.lat_center,
+                predicted: predVal,
+                supply: supply,
+                gap: gap
+            };
         });
-    </script>
-</div>
+
+        grids.sort((a, b) => b.gap - a.gap);
+
+        gridContainer.innerHTML = '';
+        let totalPressure = 0;
+        let highestRiskGrid = null;
+
+        grids.forEach(grid => {
+            totalPressure += grid.gap;
+            if (!highestRiskGrid || grid.gap > highestRiskGrid.gap) highestRiskGrid = grid;
+
+            const isHighRisk = grid.gap > 50;
+            const card = document.createElement('div');
+
+            if (isHighRisk) {
+                card.className = "bg-white p-4 rounded-xl border-2 border-rose-200 hover:border-rose-300 shadow-sm hover:shadow-md transition-all cursor-pointer";
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <div class="font-bold text-slate-800 text-sm flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-rose-500"></i>Grid ${grid.id}</div>
+                            <div class="text-[11px] text-slate-500 truncate">${grid.name}</div>
+                        </div>
+                        <div class="bg-rose-50 border border-rose-100 px-2.5 py-1 rounded-lg text-center">
+                            <div class="text-[10px] text-rose-400 font-bold">缺口</div>
+                            <div class="text-lg font-black text-rose-600 font-mono">+${grid.gap}</div>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mb-3 text-[11px]">
+                        <div class="flex-1 bg-slate-50 p-2 rounded-lg"><span class="text-slate-400">需求</span> <span class="font-mono font-semibold text-slate-700 ml-1">${grid.predicted}</span></div>
+                        <div class="flex-1 bg-slate-50 p-2 rounded-lg"><span class="text-slate-400">供给</span> <span class="font-mono font-semibold text-slate-700 ml-1">${grid.supply}</span></div>
+                    </div>
+                    <button class="w-full py-2 rounded-xl text-xs font-bold bg-rose-500 hover:bg-rose-600 text-white shadow-sm flex items-center justify-center gap-1.5 transition" ${isReadonly ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>
+                        <i data-lucide="send" class="w-3 h-3"></i> ${isReadonly ? '⛔ 只读模式' : '发送紧急调度令'}
+                    </button>
+                `;
+            } else {
+                card.className = "bg-white p-4 rounded-xl border border-slate-200 hover:border-indigo-200 shadow-sm hover:shadow-md transition-all cursor-pointer";
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <div class="font-bold text-slate-800 text-sm flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-indigo-500"></i>Grid ${grid.id}</div>
+                            <div class="text-[11px] text-slate-500 truncate">${grid.name}</div>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg text-center">
+                            <div class="text-[10px] text-slate-400">状态</div>
+                            <div class="text-sm font-bold text-slate-600 font-mono">平衡</div>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mb-3 text-[11px]">
+                        <div class="flex-1"><span class="text-slate-400">需求</span> <span class="font-mono font-medium text-slate-700 ml-1">${grid.predicted}</span></div>
+                        <div class="flex-1 text-right"><span class="text-slate-400">供给</span> <span class="font-mono font-medium text-slate-700 ml-1">${grid.supply}</span></div>
+                    </div>
+                    <button class="w-full py-2 rounded-xl text-xs font-medium bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 flex items-center justify-center gap-1.5 transition" ${isReadonly ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>
+                        <i data-lucide="radio" class="w-3 h-3"></i> ${isReadonly ? '⛔ 只读模式' : '常规区域广播'}
+                    </button>
+                `;
+            }
+
+            card.querySelector('button').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dispatchToGrid(grid.id, grid.name, grid.gap, grid.lon, grid.lat);
+            });
+            card.addEventListener('click', () => {
+                const center = getGridCenter(grid.id);
+                if (map) map.setView([center.lat, center.lng], 13);
+            });
+            gridContainer.appendChild(card);
+        });
+
+        const pressurePercent = Math.min(100, Math.round((totalPressure / 800) * 100));
+        if (pressureGauge) {
+            pressureGauge.innerText = `${pressurePercent}%`;
+            pressureGauge.className = pressurePercent > 60 ? 'text-rose-600 ml-1' : 'text-indigo-600 ml-1';
+        }
+
+        if (highestRiskGrid && highestRiskGrid.gap > 0) {
+            if (strategyDisplay) strategyDisplay.innerHTML = `建议向 <span class="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 font-bold">${highestRiskGrid.name} (Grid ${highestRiskGrid.id})</span> 调拨 <span class="text-rose-600 font-black font-mono">${highestRiskGrid.gap}</span> 辆空车。`;
+        } else {
+            if (strategyDisplay) strategyDisplay.innerHTML = "全网供需平衡，维持常规巡游策略即可。";
+        }
+        lucide.createIcons();
+    }
+
+    // ========== 调度指令 ==========
+    function dispatchToGrid(gridId, gridName, gap, lon, lat) {
+        if (gap <= 0) {
+            addLog(`网格 [${gridName}] 运力充足，无需强制调度。`, 'system');
+            return;
+        }
+        // 创建服务器端广播订单
+        fetch('/api/dispatch/broadcast', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                grid_id: gridId,
+                grid_name: gridName,
+                lng: lon,
+                lat: lat,
+                needed: gap,
+                price: Math.round(gap * 2.5 + 20)
+            })
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                addLog(`[BROADCAST] 已向全网司机广播 <span class="text-rose-600 font-bold">${gridName} (Grid ${gridId})</span> 调度令 (需 ${gap} 名司机)`, 'danger');
+                // 跨标签页通知
+                localStorage.setItem('mamba_dispatch_broadcast', JSON.stringify({
+                    action: 'new_order',
+                    order: data.order,
+                    timestamp: Date.now()
+                }));
+                pollBroadcastOrders();
+            }
+        }).catch(() => {
+            addLog(`[ERROR] 广播失败，请检查服务器连接`, 'danger');
+        });
+
+        if (map) {
+            map.setView([lat, lon], 13);
+        }
+    }
+
+    function simulateDispatchOptimization() {
+        addLog("INIT: 启动全网运力一键调优 (Mamba-GNN Global Optimization)...", "system");
+        setTimeout(() => {
+            addLog("SUCCESS: 矩阵计算完成，已重排全局网格权重，下发 3 份并行引导预案。", "success");
+        }, 800);
+    }
+
+    // ========== 日志系统 ==========
+    function renderLogDOM(msg, type, timeStr, animate = true) {
+        const div = document.createElement('div');
+        let textColor = "text-slate-600", prefixIcon = `<span class="text-slate-400 mr-2">></span>`;
+        if (type === 'danger') { textColor = "text-rose-600"; prefixIcon = `<span class="text-rose-500 mr-2 animate-pulse">!</span>`; }
+        else if (type === 'success') { textColor = "text-emerald-600"; prefixIcon = `<span class="text-emerald-500 mr-2">&#10003;</span>`; }
+        else if (type === 'system') { textColor = "text-indigo-600"; prefixIcon = `<span class="text-indigo-500 mr-2">#</span>`; }
+
+        if (animate) {
+            div.className = `flex items-start opacity-0 transition-all duration-300 transform translate-y-2 ${textColor}`;
+        } else {
+            div.className = `flex items-start ${textColor}`;
+        }
+        div.innerHTML = `<div class="flex-shrink-0 mt-0.5">${prefixIcon}</div><div><span class="text-slate-400 mr-2 text-[11px]">[${timeStr}]</span><span class="leading-relaxed break-all font-medium">${msg}</span></div>`;
+        logContainer.prepend(div);
+        if (animate) setTimeout(() => div.classList.remove('opacity-0', 'translate-y-2'), 30);
+    }
+
+    function addLog(msg, type = 'info') {
+        const timeStr = new Date().toLocaleTimeString([], { hour12: false });
+        renderLogDOM(msg, type, timeStr, true);
+        let logs = [];
+        try { logs = JSON.parse(localStorage.getItem('mamba_dispatch_logs')) || []; } catch(e) {}
+        logs.push({ msg, type, time: timeStr });
+        if (logs.length > 50) logs.shift();
+        localStorage.setItem('mamba_dispatch_logs', JSON.stringify(logs));
+        if (logContainer.children.length > 50) logContainer.removeChild(logContainer.lastChild);
+    }
+
+    function clearLogs() {
+        logContainer.innerHTML = '';
+        localStorage.removeItem('mamba_dispatch_logs');
+        addLog("SYS_CLEAR: 控制台日志已被手动重置", 'system');
+    }
+
+    function loadStoredLogs() {
+        let logs = [];
+        try { logs = JSON.parse(localStorage.getItem('mamba_dispatch_logs')) || []; } catch(e) {}
+        logContainer.innerHTML = '';
+        logs.forEach(log => renderLogDOM(log.msg, log.type, log.time, false));
+    }
+
+    window.addEventListener('storage', (event) => {
+        if (event.key === 'mamba_dispatch_logs_new') {
+            try {
+                const newLog = JSON.parse(event.newValue);
+                if (newLog && newLog.msg) renderLogDOM(newLog.msg, newLog.type, newLog.time, true);
+            } catch(e) {}
+        }
+    });
+
+    // ========== Tooltip 实时刷新 (按住/锁定网格时数值随时间变化) ==========
+    function refreshActiveTooltips() {
+        // 锁定网格 tooltip 随 tick 更新
+        if (lockedGridId !== null) {
+            const poly = gridPolygons[lockedGridId];
+            if (poly && poly.getTooltip()) {
+                poly.setTooltipContent(buildGridTooltipHTML(lockedGridId, getLivePrediction(lockedGridId), getTrueValue(lockedGridId)));
+            }
+        }
+        // 按住中网格 tooltip 同样随 tick 更新
+        if (pressedGridId !== null && pressedGridId !== lockedGridId) {
+            const poly = gridPolygons[pressedGridId];
+            if (poly && poly.getTooltip()) {
+                poly.setTooltipContent(buildGridTooltipHTML(pressedGridId, getLivePrediction(pressedGridId), getTrueValue(pressedGridId)));
+            }
+        }
+    }
+
+    // ========== 时间推进 ==========
+    function runTick() {
+        if (!EMBEDDED_DATA) return;
+        const maxSteps = EMBEDDED_DATA.predictions_time_series.ground_truth.length;
+        tickIndex = Math.floor(Date.now() / 1000) % maxSteps;
+
+        const now = new Date();
+        document.getElementById('system-epoch').innerText = now.toLocaleTimeString('zh-CN', { hour12: false });
+        // 更新 T+N 进度指示器
+        const tickEl = document.getElementById('tick-indicator');
+        if (tickEl) tickEl.innerText = 'T+' + (tickIndex + 1) + ' / ' + maxSteps;
+
+        updateHeatmapColors();
+        updatePredictionLabels();
+        updateDispatchPanels();
+        refreshActiveTooltips();
+    }
+
+    // ========== 启动 ==========
+    let isReadonly = false;
+
+    document.addEventListener("DOMContentLoaded", () => {
+        // 检查管理员角色 → 只读模式
+        try {
+            const tokenStr = localStorage.getItem('mamba_auth_token') || sessionStorage.getItem('mamba_auth_token');
+            if (tokenStr) {
+                const user = JSON.parse(tokenStr);
+                if (user.role === 'admin') {
+                    isReadonly = true;
+                    document.getElementById('readonly-banner').classList.remove('hidden');
+                    addLog("SYS_NOTICE: 管理员只读模式已激活，调度下发 & 广播取消操作已锁定。", "system");
+                }
+            }
+        } catch(e) {}
+
+        initMap();
+        loadStoredLogs();
+
+        let storedLogs = [];
+        try { storedLogs = JSON.parse(localStorage.getItem('mamba_dispatch_logs')) || []; } catch(e) {}
+        if (storedLogs.length === 0) {
+            addLog("SYS_BOOT: 调度大厅已就绪，225网格热力图渲染完成，等待推演...", "system");
+        }
+
+        // 首次推演 + 启动定时器（try-catch 确保计时器必定注册）
+        try { runTick(); } catch(e) { console.error('runTick error:', e); }
+        setInterval(runTick, 1000);
+
+        // 初始化广播订单轮询
+        pollBroadcastOrders();
+        setInterval(pollBroadcastOrders, 3000);
+
+        // 跨标签页同步：监听 localStorage 变更
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'mamba_dispatch_broadcast' && e.newValue) {
+                try {
+                    var msg = JSON.parse(e.newValue);
+                    if (msg.action === 'new_order') {
+                        addLog(`[SYNC] 其他标签页广播了新订单: ${msg.order.grid_name}`, 'system');
+                        pollBroadcastOrders();
+                    }
+                } catch(er) {}
+            }
+        });
+    });
+
+    // ========== 广播订单面板 ==========
+    function pollBroadcastOrders() {
+        fetch('/api/dispatch/orders/all')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) renderBroadcastOrders(data.orders);
+            }).catch(() => {});
+    }
+
+    function renderBroadcastOrders(orders) {
+        var container = document.getElementById('broadcast-orders-list');
+        if (!orders || orders.length === 0) {
+            container.innerHTML = '<div class="text-center text-slate-400 py-8 text-xs">暂无广播中的调度订单<br><span class="text-[10px]">点击左侧网格卡片发送调度令</span></div>';
+            return;
+        }
+
+        container.innerHTML = '';
+        orders.forEach(function(order) {
+            var card = document.createElement('div');
+            var gap = order.needed - order.accepted;
+            var isFilled = order.status === 'filled';
+            var isCancelled = order.status === 'cancelled';
+            var borderColor = isFilled ? 'border-emerald-300' : (isCancelled ? 'border-slate-300' : 'border-rose-200');
+
+            card.className = 'bg-white p-4 rounded-xl border-2 ' + borderColor + ' shadow-sm';
+
+            // 已接司机列表
+            var driversHtml = '';
+            if (order.accepted_by && order.accepted_by.length > 0) {
+                driversHtml = '<div class="mt-2 pt-2 border-t border-slate-100"><div class="text-[10px] text-slate-400 mb-1.5">已接单司机：</div>';
+                order.accepted_by.forEach(function(a) {
+                    driversHtml += '<span class="inline-block bg-emerald-50 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full mr-1 mb-1 font-medium">✅ ' + a.driver_name + '</span>';
+                });
+                driversHtml += '</div>';
+            }
+
+            var statusBadge = '';
+            if (isFilled) {
+                statusBadge = '<span class="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full font-bold">已补齐</span>';
+            } else if (isCancelled) {
+                statusBadge = '<span class="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-full font-bold">已取消</span>';
+            } else {
+                statusBadge = '<span class="bg-rose-100 text-rose-600 text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">广播中</span>';
+            }
+
+            card.innerHTML = `
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <div class="font-bold text-slate-800 text-sm">${order.grid_name}</div>
+                        <div class="text-[10px] text-slate-400 font-mono">Grid ${order.grid_id} · ${order.id}</div>
+                    </div>
+                    ${statusBadge}
+                </div>
+                <div class="flex gap-2 mb-2 text-[11px]">
+                    <div class="flex-1 bg-slate-50 p-2 rounded-lg text-center">
+                        <div class="text-slate-400">需要</div>
+                        <div class="text-lg font-black text-slate-700 font-mono">${order.needed}</div>
+                    </div>
+                    <div class="flex-1 bg-slate-50 p-2 rounded-lg text-center">
+                        <div class="text-slate-400">已接</div>
+                        <div class="text-lg font-black ${isFilled ? 'text-emerald-600' : 'text-amber-600'} font-mono">${order.accepted}</div>
+                    </div>
+                    <div class="flex-1 bg-slate-50 p-2 rounded-lg text-center">
+                        <div class="text-slate-400">缺口</div>
+                        <div class="text-lg font-black ${gap <= 0 ? 'text-emerald-600' : 'text-rose-600'} font-mono">${Math.max(0, gap)}</div>
+                    </div>
+                </div>
+                ${driversHtml}
+                ${!isFilled && !isCancelled && !isReadonly ? '<button onclick="cancelBroadcastOrder(\'' + order.id + '\')" class="w-full mt-2 py-1.5 bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-lg text-[10px] font-bold transition">取消广播</button>' : ''}
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    function cancelBroadcastOrder(orderId) {
+        if (!confirm('确定取消该调度广播吗？')) return;
+        fetch('/api/dispatch/orders/' + orderId + '/cancel', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    addLog(`[CANCEL] 已取消调度广播 ${orderId}`, 'system');
+                    pollBroadcastOrders();
+                }
+            }).catch(() => {});
+    }
+</script>
 {% endblock %}

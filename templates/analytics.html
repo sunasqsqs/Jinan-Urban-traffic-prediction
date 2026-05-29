@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
@@ -20,6 +20,17 @@
     .terminal-log { max-height: 220px; overflow-y: auto; scroll-behavior: smooth; }
     .terminal-log::-webkit-scrollbar { width: 6px; }
     .terminal-log::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+
+    @media (max-width: 640px) {
+        .chart-container { min-height: 280px !important; }
+        .terminal-log { max-height: 150px; }
+        h3.text-3xl { font-size: 1.25rem !important; }
+        h3.text-2xl { font-size: 1.1rem !important; }
+        h4.text-xl { font-size: 0.95rem !important; }
+        .bg-white.p-7, .bg-white.p-7.lg\\:p-8 { padding: 1rem !important; }
+        .bg-white.rounded-3xl.p-6 { padding: 0.75rem !important; }
+        #active-arch-name { font-size: 0.8rem !important; }
+    }
 </style>
 
 <div class="space-y-8 pb-16">
@@ -456,9 +467,11 @@
         initLiveMeltdownChart();
     }
 
-    // 智能数据拉取并强绑定内置数据
+    // 智能数据拉取：优先从 JSON 加载，失败则使用硬编码兜底
     async function loadData() {
         let finalData = EMBEDDED_EXPERIMENT_DATA;
+        addTerminalLog('使用内嵌 Mamba-GNN 评估数据', 'info');
+
         let ablationNodes = finalData.evaluation_groups.Ablation_Study;
 
         globalAblationData = ablationNodes;

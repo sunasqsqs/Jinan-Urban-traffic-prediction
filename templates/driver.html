@@ -1,0 +1,895 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+
+<style>
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+    #driverMap {
+        height: 520px;
+        width: 100%;
+        border-radius: 14px;
+        border: 1px solid #e2e8f0;
+        z-index: 10;
+    }
+    .leaflet-tile-pane { filter: grayscale(5%); }
+    .gps-dot {
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6);
+        animation: gps-ring 2s infinite cubic-bezier(0.66, 0, 0, 1);
+    }
+    @keyframes gps-ring {
+        to { box-shadow: 0 0 0 14px rgba(245, 158, 11, 0); }
+    }
+    @media (max-width: 640px) {
+        #driverMap { height: 280px; border-radius: 10px; }
+        /* 状态栏按钮紧凑排列 */
+        #online-btn, #gps-locate-btn { padding: 8px 12px; font-size: 12px; }
+        /* 面板全宽圆角 */
+        #waiting-card, #active-order-card, #earnings-card, #dispatch-orders-panel {
+            border-radius: 12px;
+        }
+        /* 大按钮触摸友好 */
+        #order-actions button, #earnings-confirm-btn {
+            padding-top: 14px; padding-bottom: 14px; font-size: 14px;
+        }
+        /* 头部标题缩小 */
+        h3 { font-size: 1.25rem !important; }
+        /* 地标按钮滚动 */
+        #landmark-btns { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+        #landmark-btns button { flex-shrink: 0; white-space: nowrap; }
+    }
+</style>
+
+<div class="space-y-6 pb-12">
+
+    <!-- 头部：与其他页面统一的大标题风格 -->
+    <div class="mb-6 border-b border-gray-200 pb-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-600 text-xs font-mono mb-3">
+            <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            DRIVER DISPATCH TERMINAL
+        </div>
+        <h3 class="text-3xl font-bold text-gray-800 tech-font mb-2">济南市网约车 · 司机接单</h3>
+        <p class="text-gray-500 text-sm">
+            系统根据距离最近、始终点需求最高、金额最大的订单自动匹配并派发给您。
+            <br><span class="text-amber-500 font-mono tracking-wide font-semibold">* GPS 已启用：系统自动获取您当前真实位置，也可在地图上点击修正。</span>
+        </p>
+        <!-- 管理员/高级会员 只读提示 -->
+        <div id="readonly-banner" class="hidden mt-3 bg-amber-50 border border-amber-300 rounded-lg px-4 py-2.5 flex items-center gap-2">
+            <span class="text-amber-500 text-lg">⚠️</span>
+            <div>
+                <span class="text-amber-700 text-xs font-bold">只读模式</span>
+                <span class="text-amber-600 text-xs ml-2">您当前以管理员/高级会员身份查看，无法进行接单操作。请使用普通司机账号登录以接单。</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 顶部状态栏 -->
+    <div class="flex flex-wrap items-center justify-between gap-2 sm:gap-3 bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-sm">
+        <div class="flex items-center gap-2 sm:gap-3">
+            <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+            <div>
+                <div class="font-bold text-slate-800 text-xs sm:text-sm" id="driver-name">鲁A·车主</div>
+                <div class="text-[10px] sm:text-xs text-slate-400" id="driver-status-text">在线听单中</div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 sm:gap-4">
+            <div class="text-right">
+                <div class="text-[10px] text-slate-400">今日收入</div>
+                <div class="text-lg sm:text-xl font-black text-emerald-600" id="hud-earnings">¥0.00</div>
+            </div>
+            <button onclick="locateGPS()" id="gps-locate-btn"
+                class="px-3 sm:px-4 py-2 sm:py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-xs sm:text-sm transition shadow-sm flex items-center gap-1 sm:gap-1.5"
+                title="点击获取 GPS 当前位置">
+                <i data-lucide="crosshair" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i> <span class="hidden sm:inline">定位</span>
+            </button>
+            <button onclick="toggleOnline()" id="online-btn"
+                class="px-4 sm:px-5 py-2 sm:py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs sm:text-sm transition shadow-sm hover:bg-emerald-600">
+                在线
+            </button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+        <!-- 左侧: 地图 -->
+        <div class="lg:col-span-8 space-y-3">
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+                <div class="relative rounded-xl overflow-hidden">
+                    <div id="driverMap"></div>
+
+                    <!-- GPS坐标 -->
+                    <div class="absolute bottom-2 left-2 bg-white/90 backdrop-blur rounded-lg px-2.5 py-1.5 border border-slate-200 shadow text-[10px] z-10 font-mono text-slate-500"
+                         id="gps-display">117.02497, 36.66116</div>
+                </div>
+
+                <!-- 地标快捷导航 -->
+                <div class="flex items-center justify-between mt-2 text-[10px] text-slate-400">
+                <span class="flex items-center gap-1"><i data-lucide="mouse-pointer-click" class="w-3 h-3"></i> 点击地图可修正当前定位</span>
+                <span class="flex items-center gap-1" id="gps-indicator">
+                    <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> 未定位 · 点击右上角📍按钮
+                </span>
+            </div>
+
+                <!-- 地标快捷导航 -->
+                <div class="flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t border-slate-100" id="landmark-btns">
+                    <span class="text-[10px] text-slate-400 mr-1">巡游至：</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧: 状态面板 -->
+        <div class="lg:col-span-4 space-y-4">
+
+            <!-- 车辆状态卡 -->
+            <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                <h3 class="font-bold text-sm text-slate-800 mb-3 flex items-center gap-2 border-b border-slate-100 pb-2">
+                    <i data-lucide="radio" class="w-4 h-4 text-indigo-500"></i>车辆状态
+                </h3>
+                <div class="bg-slate-50 rounded-lg p-3 text-xs space-y-2 font-mono">
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">GPS 坐标</span>
+                        <span class="text-emerald-600 font-bold" id="status-coords">117.024967, 36.661156</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">所在网格</span>
+                        <span class="text-indigo-600 font-bold" id="status-grid">Grid 112</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">在线时长</span>
+                        <span class="text-slate-600 font-bold" id="status-uptime">00:00:00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 进行中订单 -->
+            <div id="active-order-card" class="hidden bg-white border-2 border-amber-400 rounded-2xl p-5 shadow-lg">
+                <div class="flex items-center gap-2 mb-3 border-b border-amber-100 pb-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    <h3 class="font-bold text-slate-800 text-sm">系统派单</h3>
+                    <span class="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold" id="order-status-tag">已接单</span>
+                </div>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">乘客</span>
+                        <span class="font-bold text-slate-800" id="order-passenger">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">上车点</span>
+                        <span class="font-bold text-slate-800 text-right max-w-[55%] truncate" id="order-pickup">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">目的地</span>
+                        <span class="font-bold text-slate-800 text-right max-w-[55%] truncate" id="order-dropoff">--</span>
+                    </div>
+                    <div class="flex justify-between border-t border-slate-100 pt-2">
+                        <span class="text-slate-400">预估收入</span>
+                        <span class="text-xl font-black text-amber-600" id="order-price">¥0.00</span>
+                    </div>
+                </div>
+                <div class="mt-4 space-y-2" id="order-actions"></div>
+            </div>
+
+            <!-- 收款确认卡（到达目的地后显示） -->
+            <div id="earnings-card" class="hidden bg-white rounded-2xl border-2 border-emerald-400 p-5 shadow-lg">
+                <div class="text-center mb-4">
+                    <div class="text-3xl mb-2">✅</div>
+                    <h4 class="font-bold text-slate-800 text-base">已到达目的地</h4>
+                    <p class="text-xs text-slate-400 mt-1" id="earnings-route">--</p>
+                </div>
+                <div class="space-y-2.5 text-xs sm:text-sm bg-slate-50 rounded-xl p-4 mb-4">
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">乘客</span>
+                        <span class="font-bold text-slate-800" id="earnings-passenger">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-500">里程</span>
+                        <span class="font-bold text-slate-700" id="earnings-distance">-- km</span>
+                    </div>
+                    <div class="flex justify-between border-t border-slate-200 pt-2.5 mt-1">
+                        <span class="text-slate-500 font-bold text-sm">本次收入</span>
+                        <span class="text-2xl font-black text-emerald-600" id="earnings-price">¥ --</span>
+                    </div>
+                </div>
+                <button onclick="confirmEarnings()" id="earnings-confirm-btn" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold rounded-xl text-sm transition shadow-lg shadow-emerald-500/20">
+                    确认收款
+                </button>
+                <p class="text-center text-[10px] text-slate-400 mt-3">确认后行程记录将自动保存</p>
+            </div>
+
+            <!-- 调度广播订单列表 -->
+            <div id="dispatch-orders-panel" class="hidden bg-white rounded-2xl border-2 border-indigo-300 p-5 shadow-sm">
+                <div class="flex items-center justify-between mb-3 pb-2 border-b border-indigo-100">
+                    <h4 class="font-bold text-sm text-indigo-700 flex items-center gap-2">
+                        <i data-lucide="radio" class="w-4 h-4"></i> 调度广播订单
+                    </h4>
+                    <span class="text-[10px] text-indigo-400 font-mono" id="dispatch-orders-count">0 个</span>
+                </div>
+                <div id="dispatch-orders-list" class="flex flex-col gap-2 max-h-[360px] overflow-y-auto pr-1">
+                    <div class="text-center text-slate-400 py-6 text-xs">暂无调度广播</div>
+                </div>
+            </div>
+
+            <!-- 等待派单 -->
+            <div id="waiting-card" class="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm text-center">
+                <div class="text-5xl mb-4">🚕</div>
+                <p class="text-slate-500 text-sm font-medium">正在监听附近叫车请求</p>
+                <p class="text-xs text-slate-400 mt-1.5">系统根据距离、需求与金额自动匹配最优订单</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const JINAN_LANDMARKS = [
+        {"id":"quancheng_sq","name":"泉城广场","lng":117.024967,"lat":36.661156},
+        {"id":"baotu_spring","name":"趵突泉","lng":117.015577,"lat":36.660634},
+        {"id":"daming_lake","name":"大明湖","lng":117.025354,"lat":36.672957},
+        {"id":"jinan_west","name":"济南西站","lng":116.886368,"lat":36.668102},
+        {"id":"yaoqiang_airport","name":"遥墙机场","lng":117.265531,"lat":36.850785},
+        {"id":"qianfoshan","name":"千佛山","lng":117.032649,"lat":36.638531},
+        {"id":"gaoxin_wanda","name":"高新区万达","lng":117.135235,"lat":36.673891}
+    ];
+
+    let driverId = 'driver_' + Math.floor(Math.random() * 100000);
+    let driverName = '鲁A·星级车主';
+    let driverPos = { lng: 117.024967, lat: 36.661156 };
+    let isOnline = true;
+    let activeTrip = null;
+    let activeTripId = null;
+    let map = null;
+    let driverMarker = null;
+    let pickupMarker = null;
+    let dropoffMarker = null;
+    let routeLine = null;
+    let heartbeatTimer = null;
+    let tripPollTimer = null;
+    let earningsToday = 0;
+    let onlineSince = Date.now();
+
+    function dist(lng1, lat1, lng2, lat2) {
+        const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function getGridId(lng, lat) {
+        const x = Math.floor((lng - 116.0) / ((118.0 - 116.0) / 15));
+        const y = Math.floor((lat - 36.0) / ((37.8 - 36.0) / 15));
+        return Math.max(0, Math.min(14, y)) * 15 + Math.max(0, Math.min(14, x));
+    }
+
+    window.addEventListener('load', function() {
+        let userRole = 'normal';
+        const tok = localStorage.getItem('mamba_auth_token');
+        if (tok) {
+            try {
+                const u = JSON.parse(tok);
+                userRole = u.role || 'normal';
+                // 种子司机（driver_xxx）直接使用用户名作为司机ID，匹配 app.py 预置司机
+                if (u.username && u.username.indexOf('driver_') === 0) {
+                    driverId = u.username;
+                } else {
+                    driverId = 'driver_' + u.username;
+                }
+                driverName = '鲁A·' + (u.username || '星级车主');
+            } catch(e) {}
+        }
+        document.getElementById('driver-name').innerText = driverName;
+
+        // 管理员/高级会员 → 只读模式
+        if (userRole === 'admin' || userRole === 'super') {
+            document.getElementById('readonly-banner').classList.remove('hidden');
+            // 禁用所有按钮和操作
+            var btns = document.querySelectorAll('#online-btn, #gps-locate-btn, #order-actions button, #earnings-confirm-btn, button[onclick*="acceptDispatchOrder"], button[onclick*="declineDispatchOrder"]');
+            btns.forEach(function(el) { el.disabled = true; el.classList.add('opacity-50', 'cursor-not-allowed'); });
+            // 修改上线按钮文案
+            var onlineBtn = document.getElementById('online-btn');
+            if (onlineBtn) { onlineBtn.innerText = '⛔ 只读'; onlineBtn.className = 'px-5 py-2.5 bg-slate-400 text-white font-bold rounded-xl text-sm transition shadow-sm cursor-not-allowed'; }
+            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> 只读模式 · 仅查看';
+            // 不阻止地图查看
+            initMap();
+            initGPS();
+            initLandmarkButtons();
+            startHeartbeat();
+            return;
+        }
+
+        initMap();
+        initGPS();
+        initLandmarkButtons();
+        startHeartbeat();
+        startTripPolling();
+        startDispatchPolling();
+
+        // 跨标签页同步：监听调度广播
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'mamba_dispatch_broadcast' && e.newValue) {
+                try { var msg = JSON.parse(e.newValue);
+                    if (msg.action === 'new_order') startDispatchPolling();
+                } catch(er) {}
+            }
+            // 监听乘客端创建的新行程 → 立即轮询接取
+            if (e.key === 'mamba_trip_sync' && e.newValue) {
+                try { var msg2 = JSON.parse(e.newValue);
+                    if (msg2.action === 'new_trip' && !activeTrip) {
+                        startTripPolling();
+                    }
+                } catch(er) {}
+            }
+        });
+    });
+
+    function initLandmarkButtons() {
+        const c = document.getElementById('landmark-btns');
+        JINAN_LANDMARKS.forEach(function(lm) {
+            const b = document.createElement('button');
+            b.onclick = function() { map.setView([lm.lat, lm.lng], 13); driverPos = {lng: lm.lng, lat: lm.lat}; updateDriverOnMap(); updateStatusPanel(); };
+            b.className = 'text-[10px] bg-slate-50 hover:bg-slate-100 border border-slate-200 px-2 py-1 rounded-lg transition text-slate-600 font-bold';
+            b.innerText = lm.name;
+            c.appendChild(b);
+        });
+    }
+
+    // ===== GPS 定位（点击按钮触发，模拟真实网约车手动开启定位） =====
+    let gpsLocated = false;
+    let gpsWatchId = null;
+
+    function initGPS() {
+        // 仅初始化默认位置，不自动获取 GPS
+        // 司机需点击右上角「📍 定位」按钮主动开启
+        document.getElementById('gps-indicator').innerHTML =
+            '<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> 未定位 · 点击右上角📍按钮';
+        document.getElementById('gps-display').innerText = driverPos.lng.toFixed(5) + ', ' + driverPos.lat.toFixed(5);
+    }
+
+    function locateGPS() {
+        if (!navigator.geolocation) {
+            document.getElementById('gps-indicator').innerHTML =
+                '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 浏览器不支持GPS';
+            return;
+        }
+
+        var btn = document.getElementById('gps-locate-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span> 定位中';
+
+        document.getElementById('gps-indicator').innerHTML =
+            '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> 正在获取GPS...';
+
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                driverPos = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+                gpsLocated = true;
+                updateDriverOnMap();
+                updateStatusPanel();
+                map.setView([driverPos.lat, driverPos.lng], 15);
+                document.getElementById('gps-indicator').innerHTML =
+                    '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> GPS 已定位 (±' + Math.round(pos.coords.accuracy || 10) + 'm)';
+                document.getElementById('gps-display').innerText = driverPos.lng.toFixed(5) + ', ' + driverPos.lat.toFixed(5);
+
+                // 定位成功后按钮变身"已定位"
+                btn.innerHTML = '<i data-lucide="crosshair" class="w-4 h-4"></i> 已定位';
+                btn.className = 'px-4 py-2.5 bg-emerald-600 text-white font-bold rounded-xl text-sm transition shadow-sm flex items-center gap-1.5';
+                btn.disabled = false;
+                if (window.lucide) lucide.createIcons();
+
+                // 启动持续追踪
+                startGPSWatch();
+            },
+            function(err) {
+                document.getElementById('gps-indicator').innerHTML =
+                    '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 定位失败 · 使用默认位置';
+                btn.innerHTML = '<i data-lucide="crosshair" class="w-4 h-4"></i> 重试定位';
+                btn.className = 'px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-sm transition shadow-sm flex items-center gap-1.5';
+                btn.disabled = false;
+                if (window.lucide) lucide.createIcons();
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    }
+
+    function startGPSWatch() {
+        if (gpsWatchId) navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = navigator.geolocation.watchPosition(
+            function(pos) {
+                if (!activeTrip || activeTrip.status === 'completed') {
+                    driverPos = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+                    updateDriverOnMap();
+                    updateStatusPanel();
+                    document.getElementById('gps-display').innerText = driverPos.lng.toFixed(5) + ', ' + driverPos.lat.toFixed(5);
+                    document.getElementById('gps-indicator').innerHTML =
+                        '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> GPS 实时追踪中';
+                }
+            },
+            function() {},
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    }
+
+    function updateStatusPanel() {
+        document.getElementById('status-coords').innerText = driverPos.lng.toFixed(5) + ', ' + driverPos.lat.toFixed(5);
+        document.getElementById('gps-display').innerText = driverPos.lng.toFixed(5) + ', ' + driverPos.lat.toFixed(5);
+        document.getElementById('status-grid').innerText = 'Grid ' + getGridId(driverPos.lng, driverPos.lat);
+    }
+
+    // ===== 地图 =====
+    function initMap() {
+        map = L.map('driverMap', { zoomControl: false, attributionControl: false })
+            .setView([36.661156, 117.024967], 12);
+
+        L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+            subdomains: ['1','2','3','4'], maxZoom: 18
+        }).addTo(map);
+
+        const carIcon = L.divIcon({
+            html: '<div class="gps-dot bg-amber-500 text-white rounded-full w-9 h-9 flex items-center justify-center text-base font-bold border-2 border-white shadow-lg">🚕</div>',
+            className: '', iconSize: [36,36], iconAnchor: [18,18]
+        });
+        driverMarker = L.marker([driverPos.lat, driverPos.lng], { icon: carIcon }).addTo(map);
+
+        const greenIcon = L.divIcon({
+            html: '<div class="bg-emerald-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs font-bold border-2 border-white shadow">A</div>',
+            className: '', iconSize: [28,28], iconAnchor: [14,14]
+        });
+        const redIcon = L.divIcon({
+            html: '<div class="bg-rose-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs font-bold border-2 border-white shadow">B</div>',
+            className: '', iconSize: [28,28], iconAnchor: [14,14]
+        });
+        pickupMarker = L.marker([36.661, 117.025], { icon: greenIcon });
+        dropoffMarker = L.marker([36.673, 117.025], { icon: redIcon });
+
+        JINAN_LANDMARKS.forEach(function(lm) {
+            L.marker([lm.lat, lm.lng], {
+                icon: L.divIcon({ html: '<div class="text-sm">📍</div>', className: '', iconSize: [16,16], iconAnchor: [8,16] })
+            }).addTo(map).bindTooltip(lm.name, { direction: 'top' });
+        });
+
+        map.on('click', function(e) {
+            if (activeTrip && activeTrip.status !== 'completed') return;
+            driverPos = { lng: e.latlng.lng, lat: e.latlng.lat };
+            updateDriverOnMap();
+            updateStatusPanel();
+        });
+
+        updateStatusPanel();
+    }
+
+    function updateDriverOnMap() {
+        if (driverMarker) driverMarker.setLatLng([driverPos.lat, driverPos.lng]);
+    }
+
+    // ===== 在线状态 =====
+    function toggleOnline() {
+        isOnline = !isOnline;
+        const btn = document.getElementById('online-btn');
+        const st = document.getElementById('driver-status-text');
+        if (isOnline) {
+            btn.className = 'px-5 py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-sm transition shadow-sm hover:bg-emerald-600';
+            btn.innerText = '在线';
+            st.innerText = '在线听单中';
+            startHeartbeat();
+            startTripPolling();
+        } else {
+            btn.className = 'px-5 py-2.5 bg-slate-200 text-slate-500 font-bold rounded-xl text-sm transition';
+            btn.innerText = '离线';
+            st.innerText = '已离线';
+            clearInterval(heartbeatTimer);
+            clearInterval(tripPollTimer);
+        }
+    }
+
+    // ===== 心跳 =====
+    // ===== 调度广播订单（网格派单 → 司机抢单） =====
+    let dispatchPollTimer = null;
+    let myAcceptedDispatch = null;  // 当前已接受的调度订单
+
+    function startDispatchPolling() {
+        if (dispatchPollTimer) clearInterval(dispatchPollTimer);
+        pollDispatchOrders();
+        dispatchPollTimer = setInterval(pollDispatchOrders, 4000);
+    }
+
+    function pollDispatchOrders() {
+        if (!isOnline || activeTrip) {
+            document.getElementById('dispatch-orders-panel').classList.add('hidden');
+            return;
+        }
+        fetch('/api/dispatch/orders')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) renderDispatchOrders(data.orders);
+            }).catch(() => {});
+    }
+
+    function renderDispatchOrders(orders) {
+        var panel = document.getElementById('dispatch-orders-panel');
+        var list = document.getElementById('dispatch-orders-list');
+        var countEl = document.getElementById('dispatch-orders-count');
+
+        if (!orders || orders.length === 0) {
+            panel.classList.add('hidden');
+            return;
+        }
+
+        panel.classList.remove('hidden');
+        countEl.innerText = orders.length + ' 个';
+        list.innerHTML = '';
+
+        orders.forEach(function(order) {
+            // 检查我是否已接受
+            var iAccepted = order.accepted_by && order.accepted_by.some(function(a) { return a.driver_id === driverId; });
+            var gap = order.needed - order.accepted;
+            var isFilled = order.status === 'filled';
+
+            // 如果已补齐或我已接受过，仍在列表中显示但状态不同
+            var card = document.createElement('div');
+            var bgClass = iAccepted ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200';
+            card.className = bgClass + ' p-3.5 rounded-xl border shadow-sm';
+
+            var actionHtml = '';
+            if (iAccepted) {
+                actionHtml = '<span class="text-[10px] text-emerald-600 font-bold">✅ 已接单 · 前往该区域</span>';
+            } else if (gap <= 0) {
+                actionHtml = '<span class="text-[10px] text-slate-400">已补齐</span>';
+            } else {
+                actionHtml = '<button onclick="acceptDispatchOrder(\'' + order.id + '\')" class="w-full py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg text-xs transition">📋 接单 (+¥' + order.price_estimate.toFixed(0) + ')</button>';
+            }
+
+            card.innerHTML = `
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <div class="font-bold text-slate-800 text-sm">${order.grid_name}</div>
+                        <div class="text-[10px] text-slate-400 font-mono">预估收入 ¥${order.price_estimate.toFixed(0)}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[10px] text-slate-400">缺口</div>
+                        <div class="text-lg font-black ${gap <= 0 ? 'text-emerald-600' : 'text-rose-600'} font-mono">${Math.max(0, gap)}/${order.needed}</div>
+                    </div>
+                </div>
+                ${actionHtml}
+            `;
+            list.appendChild(card);
+        });
+    }
+
+    function acceptDispatchOrder(orderId) {
+        if (!gpsLocated) {
+            alert('请先点击右上角「📍 定位」获取当前位置');
+            return;
+        }
+        var btn = event.target;
+        btn.disabled = true;
+        btn.innerText = '接单中...';
+
+        fetch('/api/dispatch/orders/' + orderId + '/accept', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                driver_id: driverId,
+                driver_name: driverName,
+                driver_location: driverPos
+            })
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                myAcceptedDispatch = data.order;
+                // 跨标签页通知
+                localStorage.setItem('mamba_dispatch_broadcast', JSON.stringify({
+                    action: 'driver_accepted',
+                    order: data.order,
+                    driver_name: driverName,
+                    timestamp: Date.now()
+                }));
+                // 服务器已自动创建行程 → 触发 trip 轮询接取
+                if (data.trip) {
+                    showActiveOrder(data.trip);
+                    startTripPolling();
+                }
+                pollDispatchOrders();
+            } else {
+                alert(data.message || '接单失败');
+            }
+        }).catch(() => {
+            alert('网络错误');
+        }).finally(() => {
+            btn.disabled = false;
+            if (btn.innerText === '接单中...') btn.innerText = '📋 接单';
+        });
+    }
+
+    function startHeartbeat() {
+        clearInterval(heartbeatTimer);
+        function beat() {
+            if (!isOnline) return;
+            fetch('/api/drivers/heartbeat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    driver_id: driverId, name: driverName, location: driverPos,
+                    status: (activeTrip && activeTrip.status !== 'completed') ? 'busy' : 'online',
+                    vehicle: '鲁A·新能源网约车', user_type: 'driver'
+                })
+            }).catch(function() {});
+        }
+        beat();
+        heartbeatTimer = setInterval(beat, 5000);
+    }
+
+    // ===== 轮询派单（仅接收系统指派，司机无权主动抢单） =====
+    function startTripPolling() {
+        clearInterval(tripPollTimer);
+        function poll() {
+            if (!isOnline || activeTrip) return;
+
+            // 仅检查服务器已指派的订单（由系统 auto-dispatch 或调度广播创建）
+            fetch('/api/driver/assigned-trip?driver_id=' + driverId)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success && data.trip) {
+                        showActiveOrder(data.trip);
+                    }
+                }).catch(function() {});
+        }
+        poll();
+        tripPollTimer = setInterval(poll, 3000);
+    }
+
+    // ===== 显示活跃订单 =====
+    function showActiveOrder(trip) {
+        activeTrip = trip;
+        activeTripId = trip.id;
+
+        document.getElementById('waiting-card').classList.add('hidden');
+        document.getElementById('active-order-card').classList.remove('hidden');
+
+        document.getElementById('order-passenger').innerText = trip.passenger_name || '乘客';
+        document.getElementById('order-pickup').innerText = (trip.pickup && trip.pickup.name) || '上车点';
+        document.getElementById('order-dropoff').innerText = (trip.dropoff && trip.dropoff.name) || '目的地';
+        document.getElementById('order-price').innerText = '¥' + parseFloat(trip.price || 0).toFixed(2);
+
+        const pLng = trip.pickup_lng || (trip.pickup && trip.pickup.lng);
+        const pLat = trip.pickup_lat || (trip.pickup && trip.pickup.lat);
+        pickupMarker.setLatLng([pLat, pLng]).addTo(map);
+
+        const dLng = trip.dropoff_lng || (trip.dropoff && trip.dropoff.lng);
+        const dLat = trip.dropoff_lat || (trip.dropoff && trip.dropoff.lat);
+        dropoffMarker.setLatLng([dLat, dLng]).addTo(map);
+
+        if (routeLine) map.removeLayer(routeLine);
+        routeLine = L.polyline([[driverPos.lat, driverPos.lng], [pLat, pLng]], {
+            color: '#6366f1', weight: 4, dashArray: '8, 8', opacity: 0.8
+        }).addTo(map);
+
+        map.fitBounds([[driverPos.lat, driverPos.lng], [dLat, dLng]], { padding: [40, 40] });
+
+        renderOrderActions();
+    }
+
+    function renderOrderActions() {
+        var s = activeTrip.status;
+        var tag = document.getElementById('order-status-tag');
+        var actions = document.getElementById('order-actions');
+
+        if (s === 'accepted') {
+            tag.innerText = '前往接驾';
+            actions.innerHTML = '<button onclick="updateStatus(\'arrived\')" class="w-full py-3 bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold rounded-xl text-sm transition shadow-sm">我已到达上车点</button>';
+        } else if (s === 'arrived') {
+            tag.innerText = '等待乘客';
+            actions.innerHTML = '<button onclick="updateStatus(\'driving\')" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl text-sm transition shadow-sm animate-pulse">乘客已上车 · 开始行程</button>';
+        } else if (s === 'driving') {
+            tag.innerText = '行程中';
+            actions.innerHTML = '<button onclick="updateStatus(\'completed\')" class="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-extrabold rounded-xl text-sm transition shadow-sm">到达目的地 · 完成行程</button>';
+        }
+
+        // 在接驾前允许取消
+        if (s === 'accepted' || s === 'arrived') {
+            actions.innerHTML += '<button onclick="driverCancelTrip()" class="w-full mt-2 py-2 bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 font-bold rounded-lg text-xs transition">取消订单</button>';
+        }
+    }
+
+    function driverCancelTrip() {
+        if (!activeTripId) return;
+        if (!confirm('确定要取消此订单吗？取消后乘客将重新叫车。')) return;
+
+        fetch('/api/trips/' + activeTripId + '/cancel', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ cancelled_by: 'driver' })
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                // 保存取消记录
+                var item = {
+                    id: activeTrip.id,
+                    passenger_name: activeTrip.passenger_name || '乘客',
+                    driver_name: driverName,
+                    pickup: activeTrip.pickup,
+                    dropoff: activeTrip.dropoff,
+                    price: activeTrip.price,
+                    distance: activeTrip.distance,
+                    timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
+                    status: 'cancelled'
+                };
+                var trips = [];
+                try { trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
+                var exists = trips.some(function(t) { return t.id === activeTrip.id; });
+                if (!exists) { trips.unshift(item); }
+                localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
+
+                // 也写入乘客存储
+                var pTrips = [];
+                try { pTrips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
+                var pExists = pTrips.some(function(t) { return t.id === activeTrip.id; });
+                if (!pExists) { pTrips.unshift(item); }
+                localStorage.setItem('mamba_passenger_trips', JSON.stringify(pTrips));
+            }
+        }).catch(() => {});
+
+        resetOrder();
+    }
+
+    function updateStatus(newStatus) {
+        if (!activeTrip) return;
+
+        if (newStatus === 'arrived') {
+            activeTrip.status = 'arrived';
+            var pLng = activeTrip.pickup_lng || (activeTrip.pickup && activeTrip.pickup.lng);
+            var pLat = activeTrip.pickup_lat || (activeTrip.pickup && activeTrip.pickup.lat);
+            var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
+            var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+            if (routeLine) map.removeLayer(routeLine);
+            routeLine = L.polyline([[pLat, pLng], [dLat, dLng]], { color: '#10b981', weight: 4, opacity: 0.8 }).addTo(map);
+        } else if (newStatus === 'driving') {
+            activeTrip.status = 'driving';
+            var pLng = activeTrip.pickup_lng || (activeTrip.pickup && activeTrip.pickup.lng);
+            var pLat = activeTrip.pickup_lat || (activeTrip.pickup && activeTrip.pickup.lat);
+            driverPos = { lng: pLng, lat: pLat };
+            updateDriverOnMap();
+            updateStatusPanel();
+        } else if (newStatus === 'completed') {
+            // 不在这里 return，统一走下面的 API 调用
+            earningsToday += parseFloat(activeTrip.price || 0);
+            document.getElementById('hud-earnings').innerText = '¥' + earningsToday.toFixed(2);
+
+            var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
+            var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+            driverPos = { lng: dLng, lat: dLat };
+            updateDriverOnMap();
+            updateStatusPanel();
+        }
+
+        // 统一调用服务器 API 更新状态（乘客端轮询依赖此接口获取最新状态）
+        fetch('/api/trips/' + activeTripId + '/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus, driver_location: driverPos })
+        }).then(function() {
+            // 跨标签页同步：通知乘客端立即刷新
+            localStorage.setItem('mamba_trip_sync', JSON.stringify({
+                action: 'status_change',
+                tripId: activeTripId,
+                status: newStatus,
+                driver_name: activeTrip.driver_name,
+                driver_vehicle: activeTrip.driver_vehicle,
+                price: activeTrip.price,
+                distance: activeTrip.distance,
+                pickup: activeTrip.pickup,
+                dropoff: activeTrip.dropoff,
+                timestamp: Date.now()
+            }));
+            if (newStatus === 'completed') {
+                // 自动收款：直接保存行程记录，不显示确认界面
+                saveCompleted(activeTrip);
+                resetOrder();
+            }
+        }).catch(function() {
+            // 网络失败也自动保存
+            if (newStatus === 'completed') {
+                activeTrip.status = 'completed';
+                saveCompleted(activeTrip);
+                resetOrder();
+            }
+        });
+
+        if (newStatus !== 'completed') {
+            renderOrderActions();
+        }
+    }
+
+    // ===== 收款确认卡 =====
+    function showEarnings() {
+        document.getElementById('active-order-card').classList.add('hidden');
+        document.getElementById('waiting-card').classList.add('hidden');
+        document.getElementById('earnings-card').classList.remove('hidden');
+
+        var pickupName = (activeTrip.pickup && activeTrip.pickup.name) || '上车点';
+        var dropoffName = (activeTrip.dropoff && activeTrip.dropoff.name) || '目的地';
+        var price = parseFloat(activeTrip.price || 0).toFixed(2);
+        var distance = activeTrip.distance ? parseFloat(activeTrip.distance).toFixed(1) + ' km' : '--';
+
+        document.getElementById('earnings-route').innerText = pickupName + ' → ' + dropoffName;
+        document.getElementById('earnings-passenger').innerText = activeTrip.passenger_name || '乘客';
+        document.getElementById('earnings-distance').innerText = distance;
+        document.getElementById('earnings-price').innerText = '¥ ' + price;
+        document.getElementById('earnings-confirm-btn').innerText = '确认收款 ¥' + price;
+    }
+
+    function confirmEarnings() {
+        var btn = document.getElementById('earnings-confirm-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></span>处理中...';
+
+        saveCompleted(activeTrip);
+
+        // 跨标签页通知：司机已收款
+        localStorage.setItem('mamba_trip_sync', JSON.stringify({
+            action: 'earnings_confirmed',
+            tripId: activeTrip.id,
+            timestamp: Date.now()
+        }));
+
+        btn.innerHTML = '✅ 已收款 · 已记录';
+        btn.className = 'w-full py-3.5 bg-emerald-600 text-white font-extrabold rounded-xl text-sm transition shadow-lg';
+
+        setTimeout(function() { resetOrder(); }, 1500);
+    }
+
+    function saveCompleted(trip) {
+        var item = {
+            id: trip.id,
+            passenger_name: trip.passenger_name,
+            driver_name: driverName,
+            pickup: trip.pickup,
+            dropoff: trip.dropoff,
+            price: trip.price,
+            distance: trip.distance,
+            timestamp: new Date().toISOString().replace('T',' ').substring(0, 19),
+            status: 'completed',
+            paid: false
+        };
+        // 写入司机行程记录
+        var trips = [];
+        try { trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
+        var exists = trips.some(function(t) { return t.id === trip.id; });
+        if (!exists) { trips.unshift(item); }
+        localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
+
+        // 也写入乘客行程（标记未付款，乘客确认支付后会更新为 paid:true）
+        var pTrips = [];
+        try { pTrips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
+        var pExists = pTrips.some(function(t) { return t.id === trip.id; });
+        if (!pExists) { pTrips.unshift(item); }
+        localStorage.setItem('mamba_passenger_trips', JSON.stringify(pTrips));
+    }
+
+    function resetOrder() {
+        activeTrip = null;
+        activeTripId = null;
+        if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+        map.removeLayer(pickupMarker);
+        map.removeLayer(dropoffMarker);
+        document.getElementById('active-order-card').classList.add('hidden');
+        document.getElementById('earnings-card').classList.add('hidden');
+        document.getElementById('waiting-card').classList.remove('hidden');
+        // 立即开始接下一单
+        startTripPolling();
+        pollDispatchOrders();
+    }
+
+    // 在线计时%20results
+    setInterval(function() {
+        var d = new Date();
+        document.getElementById('status-uptime').innerText =
+            d.getHours().toString().padStart(2,'0') + ':' +
+            d.getMinutes().toString().padStart(2,'0') + ':' +
+            d.getSeconds().toString().padStart(2,'0');
+    }, 1000);
+
+    if (window.lucide) lucide.createIcons();
+
+    // GPS pulse animation
+    var gpsStyle = document.createElement('style');
+    gpsStyle.textContent = '@keyframes pulse-gps { to { box-shadow: 0 0 0 14px rgba(6,182,212,0); } }';
+    document.head.appendChild(gpsStyle);
+</script>
+{% endblock %}

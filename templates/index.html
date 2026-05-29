@@ -38,7 +38,7 @@
     </div>
 </div>
 
-<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 <script>
     document.addEventListener("DOMContentLoaded", function() {
         const container = document.getElementById('home-action-container');
@@ -61,17 +61,24 @@
             html = btnTemplate('/login', '验证身份进入系统', 'shield-check');
         } else {
             const role = currentUser.role;
+            const userType = currentUser.user_type || 'passenger';
 
-            // 主流操作页面
+            // 入口顺序与导航栏一致
             html += btnTemplate('/dashboard', '离线综合看板', 'layout-dashboard');
             html += btnTemplate('/demand', '全域需求预测', 'bar-chart-2');
 
-            // 智能调度：提级至高级会员 (super) 及管理员 (admin) 可视
             if (role === 'admin' || role === 'super') {
                 html += btnTemplate('/dispatch', '智能调度', 'navigation');
             }
 
-            html += btnTemplate('/taxi', '模拟接单', 'car');
+            // 打车 & 接单：管理员/高级会员两个都显示，普通用户按身份显示
+            if (role === 'admin' || role === 'super' || userType === 'passenger') {
+                html += btnTemplate('/passenger', '🚕 立即打车', 'map-pin');
+            }
+            if (role === 'admin' || role === 'super' || userType === 'driver') {
+                html += btnTemplate('/driver', '🚕 开始接单', 'car');
+            }
+
             html += btnTemplate('/orders', '我的行程', 'calendar');
 
             if (role === 'admin' || role === 'super') {
@@ -79,7 +86,6 @@
             }
 
             if (role === 'admin') {
-
                 html += btnTemplate('/users', '用户管理', 'users');
             }
         }

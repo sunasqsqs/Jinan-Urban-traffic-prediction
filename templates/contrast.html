@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <!-- 引入 Lucide 图标库 -->
-<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 <!-- 引入 Chart.js 库 -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -19,6 +19,16 @@
     .glass-card:hover {
         transform: translateY(-2px);
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+    }
+
+    @media (max-width: 640px) {
+        .chart-container { height: 280px; }
+        .glass-card { padding: 1rem !important; }
+        h3.text-3xl { font-size: 1.25rem !important; }
+        h3.text-lg { font-size: 0.95rem !important; }
+        .overflow-x-auto table { font-size: 0.7rem; }
+        .overflow-x-auto th, .overflow-x-auto td { padding: 0.5rem 0.75rem !important; }
+        .min-h-\\[280px\\] { min-height: 240px !important; }
     }
 </style>
 

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 <style>
     .slider-dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; transition: all 0.3s; cursor: pointer; }
     .slider-dot.active { background: #3b82f6; width: 24px; border-radius: 4px; }
@@ -51,6 +51,22 @@
     }
     .io-label { color: #64748b; margin-right: 6px; font-weight: bold;}
     .io-tensor { color: #10b981; font-weight: bold;}
+
+    @media (max-width: 640px) {
+        .glass-panel.rounded-2xl.p-8 { padding: 1rem !important; }
+        #arch-slider .w-full.h-full { min-height: 260px; }
+        #arch-slider .p-8 { padding: 1rem !important; }
+        #arch-slider .text-5xl { font-size: 2rem !important; }
+        #arch-slider .text-xl { font-size: 1rem !important; }
+        #arch-slider .text-base { font-size: 0.75rem !important; }
+        #arch-slider .max-w-xl { max-width: 100%; }
+        #arch-slider .w-28.h-28 { width: 50px; height: 50px; }
+        .slider-arrow { width: 32px; height: 32px; }
+        .slider-arrow.left { left: 4px; }
+        .slider-arrow.right { right: 4px; }
+        .timeline-item { padding-left: 2rem; }
+        .io-block { font-size: 9px; }
+    }
 </style>
 
 <div class="flex flex-col gap-8 pb-12">
