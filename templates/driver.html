@@ -260,6 +260,47 @@
         return Math.max(0, Math.min(14, y)) * 15 + Math.max(0, Math.min(14, x));
     }
 
+    async function syncEarnings() {
+        // 与 orders.html 一致：从服务端 + localStorage 合并计算总收入
+        let allTrips = [];
+        const seen = {};
+
+        // 1. 从服务端获取（含权威 paid 状态）
+        try {
+            const res = await fetch('/api/driver/trips?driver_id=' + encodeURIComponent(driverId));
+            const data = await res.json();
+            if (data.success && data.trips) {
+                data.trips.forEach(function(t) {
+                    if (!seen[t.id]) {
+                        seen[t.id] = true;
+                        allTrips.push({
+                            id: t.id,
+                            price: t.price || 0,
+                            status: t.status || 'completed'
+                        });
+                    }
+                });
+            }
+        } catch(e) { console.error('syncEarnings: 获取服务端行程失败:', e); }
+
+        // 2. 从 localStorage 合并（去重）
+        try {
+            const localTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
+            localTrips.forEach(function(t) {
+                if (!seen[t.id]) {
+                    seen[t.id] = true;
+                    allTrips.push(t);
+                }
+            });
+        } catch(e) {}
+
+        // 3. 计算总收入（与 orders.html 一致：所有行程的 price 之和）
+        earningsToday = allTrips.reduce(function(s, t) {
+            return s + parseFloat(t.price || 0);
+        }, 0);
+        document.getElementById('hud-earnings').innerText = '¥' + earningsToday.toFixed(2);
+    }
+
     window.addEventListener('load', function() {
         let userRole = 'normal';
         const tok = localStorage.getItem('mamba_auth_token');
@@ -302,6 +343,7 @@
         startHeartbeat();
         startTripPolling();
         startDispatchPolling();
+        syncEarnings();
 
         // 跨标签页同步：监听调度广播
         window.addEventListener('storage', function(e) {
@@ -317,6 +359,10 @@
                         startTripPolling();
                     }
                 } catch(er) {}
+            }
+            // 乘客付款或订单状态变化后，重新计算收入
+            if (e.key === 'mamba_trip_sync' || e.key === 'mamba_completed_trips') {
+                syncEarnings();
             }
         });
     });
@@ -748,8 +794,8 @@
             updateStatusPanel();
         } else if (newStatus === 'completed') {
             // 不在这里 return，统一走下面的 API 调用
-            earningsToday += parseFloat(activeTrip.price || 0);
-            document.getElementById('hud-earnings').innerText = '¥' + earningsToday.toFixed(2);
+            // 用 syncEarnings 从服务端+localStorage 合并计算，与 orders.html 保持一致
+            syncEarnings();
 
             var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
             var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
