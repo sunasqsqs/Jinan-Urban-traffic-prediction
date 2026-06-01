@@ -46,16 +46,16 @@ VEHICLE_TYPES = [
 def seed_ai_taxi_driver():
     """批量注册系统预置司机，分散在济南市各区，模拟真实运力分布"""
     SEED_DRIVERS = [
-        {"id": "driver_zhang", "name": "张师傅 · 泉城星级车主", "lng": 117.024967, "lat": 36.661156, "vehicle": "鲁A·D88921 (特斯拉 Model Y)", "rating": 4.98},
-        {"id": "driver_li",   "name": "李师傅 · 趵突泉片区",     "lng": 117.015577, "lat": 36.660634, "vehicle": "鲁A·F12345 (比亚迪 秦)",    "rating": 4.85},
-        {"id": "driver_wang", "name": "王师傅 · 西站快捷出行",   "lng": 116.886368, "lat": 36.668102, "vehicle": "鲁A·G67890 (帕萨特)",        "rating": 4.92},
-        {"id": "driver_zhao", "name": "赵师傅 · 高新开发区",     "lng": 117.135235, "lat": 36.673891, "vehicle": "鲁A·H11223 (丰田 凯美瑞)",   "rating": 4.75},
-        {"id": "driver_sun",  "name": "孙师傅 · 千佛山风景区",   "lng": 117.032649, "lat": 36.638531, "vehicle": "鲁A·J33445 (大众 迈腾)",     "rating": 4.88},
-        {"id": "driver_chen", "name": "陈师傅 · 洪家楼商圈",     "lng": 117.063889, "lat": 36.683333, "vehicle": "鲁A·K55667 (吉利 星瑞)",     "rating": 4.90},
-        {"id": "driver_zhou", "name": "周师傅 · 和谐广场周边",   "lng": 116.984722, "lat": 36.653333, "vehicle": "鲁A·L77889 (日产 轩逸)",     "rating": 4.81},
-        {"id": "driver_wu",   "name": "吴师傅 · 奥体中心片区",   "lng": 117.122500, "lat": 36.657222, "vehicle": "鲁A·M99001 (红旗 H5)",       "rating": 4.95},
-        {"id": "driver_ma",   "name": "马师傅 · 市妇幼保健院",   "lng": 117.007500, "lat": 36.661389, "vehicle": "鲁A·N22334 (传祺 M8)",      "rating": 4.78},
-        {"id": "driver_liu",  "name": "刘师傅 · 万象城商圈",     "lng": 117.098611, "lat": 36.653056, "vehicle": "鲁A·P44556 (蔚来 ES6)",     "rating": 4.86},
+        {"id": "driver_zhang", "name": "张师傅", "lng": 117.024967, "lat": 36.661156, "vehicle": "鲁A·D88921 (特斯拉 Model Y)", "rating": 4.98},
+        {"id": "driver_li",   "name": "李师傅", "lng": 117.015577, "lat": 36.660634, "vehicle": "鲁A·F12345 (比亚迪 秦)",    "rating": 4.85},
+        {"id": "driver_wang", "name": "王师傅", "lng": 116.886368, "lat": 36.668102, "vehicle": "鲁A·G67890 (帕萨特)",        "rating": 4.92},
+        {"id": "driver_zhao", "name": "赵师傅", "lng": 117.135235, "lat": 36.673891, "vehicle": "鲁A·H11223 (丰田 凯美瑞)",   "rating": 4.75},
+        {"id": "driver_sun",  "name": "孙师傅", "lng": 117.032649, "lat": 36.638531, "vehicle": "鲁A·J33445 (大众 迈腾)",     "rating": 4.88},
+        {"id": "driver_chen", "name": "陈师傅", "lng": 117.063889, "lat": 36.683333, "vehicle": "鲁A·K55667 (吉利 星瑞)",     "rating": 4.90},
+        {"id": "driver_zhou", "name": "周师傅", "lng": 116.984722, "lat": 36.653333, "vehicle": "鲁A·L77889 (日产 轩逸)",     "rating": 4.81},
+        {"id": "driver_wu",   "name": "吴师傅", "lng": 117.122500, "lat": 36.657222, "vehicle": "鲁A·M99001 (红旗 H5)",       "rating": 4.95},
+        {"id": "driver_ma",   "name": "马师傅", "lng": 117.007500, "lat": 36.661389, "vehicle": "鲁A·N22334 (传祺 M8)",      "rating": 4.78},
+        {"id": "driver_liu",  "name": "刘师傅", "lng": 117.098611, "lat": 36.653056, "vehicle": "鲁A·P44556 (蔚来 ES6)",     "rating": 4.86},
     ]
 
     with taxi_state_lock:
