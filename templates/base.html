@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>济南网约车 · 智能出行平台</title>
 
-    <!-- DNS 预解析加速%20 -->
+    <!-- DNS 预解析加速%20 routePermissionssetTimeou -->
     <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="dns-prefetch" href="https://webrd01.is.autonavi.com">
@@ -48,11 +48,8 @@
 
             if (routePermissions[currentPath]) {
                 if (!routePermissions[currentPath].includes(role)) {
-                    if (role === 'guest') {
-                        window.location.replace('/login');
-                    } else {
-                        window.location.replace('/');
-                    }
+                    // 未登录用户只能看首页
+                    window.location.replace('/');
                     return;
                 }
             }

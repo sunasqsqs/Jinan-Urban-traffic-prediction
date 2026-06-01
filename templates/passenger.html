@@ -115,19 +115,19 @@
                         <div class="flex gap-2">
                             <div class="relative flex-1">
                                 <input type="text" id="pickup-input"
-                                    class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-700 focus:border-cyan-500 focus:outline-none transition"
-                                    placeholder="点击输入搜索上车地点..."
-                                    value=""
-                                    autocomplete="off"
-                                    onfocus="onPickupFocus()"
-                                    oninput="onPickupInput()"
-                                    onblur="onPickupBlur()">
+                                       class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-700 focus:border-cyan-500 focus:outline-none transition"
+                                       placeholder="点击输入搜索上车地点..."
+                                       value=""
+                                       autocomplete="off"
+                                       onfocus="onPickupFocus()"
+                                       oninput="onPickupInput()"
+                                       onblur="onPickupBlur()">
                                 <input type="hidden" id="pickup-hidden" value="current">
                                 <div id="pickup-fuzzy-dropdown" class="fuzzy-dropdown hidden bg-white border border-slate-200 rounded-lg shadow-xl mt-1"></div>
                             </div>
                             <button onclick="useCurrentLocation()" id="gps-pickup-btn"
-                                class="shrink-0 px-3 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-xs transition shadow-sm flex items-center gap-1.5"
-                                title="使用 GPS 当前位置">
+                                    class="shrink-0 px-3 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-xs transition shadow-sm flex items-center gap-1.5"
+                                    title="使用 GPS 当前位置">
                                 <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 当前位置
                             </button>
                         </div>
@@ -137,11 +137,11 @@
                     <div class="relative">
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">目的地 <span class="text-cyan-500">(输入搜索)</span></label>
                         <input type="text" id="dropoff-input"
-                            class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-700 focus:border-cyan-500 focus:outline-none transition"
-                            placeholder="输入目的地名称进行搜索..."
-                            autocomplete="off"
-                            oninput="onDropoffInput()"
-                            onfocus="onDropoffInput()">
+                               class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-700 focus:border-cyan-500 focus:outline-none transition"
+                               placeholder="输入目的地名称进行搜索..."
+                               autocomplete="off"
+                               oninput="onDropoffInput()"
+                               onfocus="onDropoffInput()">
                         <input type="hidden" id="dropoff-hidden" value="">
                         <div id="fuzzy-dropdown" class="fuzzy-dropdown hidden bg-white border border-slate-200 rounded-lg shadow-xl mt-1"></div>
                     </div>
@@ -248,7 +248,18 @@
 <script>
     let passengerId = 'passenger_' + Math.floor(Math.random() * 100000);
     let passengerName = '泉城旅客';
-    let passengerPosition = { lng: 117.024967, lat: 36.661156 };
+    let passengerPosition = (function() {
+        try {
+            var saved = JSON.parse(localStorage.getItem('mamba_passenger_position'));
+            if (saved && typeof saved.lng === 'number' && typeof saved.lat === 'number') {
+                return saved;
+            }
+        } catch(e) {}
+        return { lng: 117.024967, lat: 36.661156 };
+    })();
+    let passengerRole = 'normal';
+    let passengerType = 'passenger';
+    let isLoggedIn = false;
     let selectedPickup = null;
     let selectedDropoff = null;
     let activeTrip = null;
@@ -534,21 +545,24 @@
 
     // ===== 初始化 =====
     window.addEventListener('load', function() {
-        let userRole = 'normal';
         const tokenStr = localStorage.getItem('mamba_auth_token');
         if (tokenStr) {
             try {
                 const user = JSON.parse(tokenStr);
                 passengerName = user.username || '泉城旅客';
                 passengerId = user.username;
-                userRole = user.role || 'normal';
-            } catch(e) {}
+                passengerRole = user.role || 'normal';
+                passengerType = user.user_type || 'passenger';
+                isLoggedIn = (passengerType === 'passenger' || passengerRole === 'admin' || passengerRole === 'super');
+            } catch(e) { isLoggedIn = false; }
+        } else {
+            isLoggedIn = false;
         }
         var nameEls = document.querySelectorAll('[id="passenger-name-mobile"]');
         nameEls.forEach(function(el) { el.innerText = passengerName; });
 
         // 管理员/高级会员 → 只读模式
-        if (userRole === 'admin' || userRole === 'super') {
+        if (passengerRole === 'admin' || passengerRole === 'super') {
             document.getElementById('readonly-banner').classList.remove('hidden');
             // 禁用所有输入和按钮
             var inputs = document.querySelectorAll('#booking-panel input, #booking-panel button, #trip-status-card button, #checkout-card button');
@@ -567,12 +581,32 @@
             return;
         }
 
+        // 未登录乘客：禁止叫车，但可查看地图
+        if (!isLoggedIn) {
+            var callBtn = document.getElementById('call-btn');
+            if (callBtn) {
+                callBtn.disabled = true;
+                callBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                callBtn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4"></i> 请先登录后再叫车';
+                callBtn.className = 'w-full py-3.5 bg-slate-400 text-white font-extrabold rounded-xl text-sm';
+                callBtn.title = '您需要登录乘客账号后才能叫车';
+            }
+            var bookingInputs = document.querySelectorAll('#booking-panel input');
+            bookingInputs.forEach(function(el) { el.disabled = true; el.classList.add('opacity-50', 'cursor-not-allowed'); });
+            // 地图和附近车辆仍可查看
+            populatePickupSelect();
+            initMap();
+            initGPS();
+            pollNearbyDrivers();
+            setInterval(pollNearbyDrivers, 5000);
+            return;
+        }
+
         populatePickupSelect();
         initMap();
         initGPS();
         pollNearbyDrivers();
         setInterval(pollNearbyDrivers, 5000);
-        checkExistingTrips();
 
         // 跨标签页同步：监听司机端状态变更，立即刷新行程UI
         window.addEventListener('storage', function(e) {
@@ -796,7 +830,25 @@
     }
 
     // ===== GPS 定位 =====
+    function savePassengerPosition() {
+        localStorage.setItem('mamba_passenger_position', JSON.stringify(passengerPosition));
+    }
+
     function initGPS() {
+        // 如果已有保存的位置，不再自动定位
+        var hasSaved = false;
+        try {
+            var sp = JSON.parse(localStorage.getItem('mamba_passenger_position'));
+            if (sp && typeof sp.lng === 'number') hasSaved = true;
+        } catch(e) {}
+
+        if (hasSaved) {
+            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 已加载上次位置';
+            gpsLocated = true;
+            updateUserOnMap();
+            return;
+        }
+
         if (!navigator.geolocation) {
             document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 无法获取GPS';
             return;
@@ -810,24 +862,12 @@
                 document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> GPS 已定位 (±' + Math.round(pos.coords.accuracy || 10) + 'm)';
                 useCurrentLocation();
                 updateEstimate();
+                savePassengerPosition();
             },
             function(err) {
                 document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 使用默认位置 (济南市中心)';
             },
             { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-        );
-
-        gpsWatchId = navigator.geolocation.watchPosition(
-            function(pos) {
-                if (!activeTrip) {
-                    passengerPosition = { lng: pos.coords.longitude, lat: pos.coords.latitude };
-                    gpsLocated = true;
-                    updateUserOnMap();
-                    document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> GPS 实时追踪中';
-                }
-            },
-            function() {},
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
     }
 
@@ -841,10 +881,11 @@
         }).addTo(map);
 
         const userIcon = L.divIcon({
-            html: '<div class="bg-cyan-500 text-white rounded-full w-9 h-9 flex items-center justify-center text-sm font-bold border-2 border-white shadow-lg" style="box-shadow: 0 0 0 0 rgba(6,182,212,0.5); animation: pulse-gps 2s infinite cubic-bezier(0.66,0,0,1);">👤</div>',
-            className: '', iconSize: [36,36], iconAnchor: [18,18]
+            html: '<div class="bg-cyan-500 text-white rounded-full w-10 h-10 flex items-center justify-center text-lg font-bold border-2 border-white shadow-lg" style="box-shadow: 0 0 0 0 rgba(6,182,212,0.5); animation: pulse-gps 2s infinite cubic-bezier(0.66,0,0,1);">🧑</div>',
+            className: '', iconSize: [40,40], iconAnchor: [20,20]
         });
-        userMarker = L.marker([passengerPosition.lat, passengerPosition.lng], { icon: userIcon }).addTo(map);
+        userMarker = L.marker([passengerPosition.lat, passengerPosition.lng], { icon: userIcon }).addTo(map)
+            .bindTooltip(passengerName, { direction: 'top', offset: [0, -20] });
 
         // 地标标记
         JINAN_LANDMARKS.forEach(function(lm) {
@@ -862,12 +903,14 @@
             updateUserOnMap();
             useCurrentLocation();
             document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span> 手动设定上车点';
+            savePassengerPosition();
         });
     }
 
     function updateUserOnMap() {
         if (!userMarker) return;
         userMarker.setLatLng([passengerPosition.lat, passengerPosition.lng]);
+        userMarker.setTooltipContent(passengerName);
         if (map && !activeTrip) {
             map.panTo([passengerPosition.lat, passengerPosition.lng], { animate: true, duration: 0.5 });
         }
@@ -889,6 +932,12 @@
 
     // ===== 叫车 =====
     function callTaxi() {
+        // 未登录乘客不允许叫车
+        if (!isLoggedIn) {
+            alert('请先登录乘客账号后再叫车！\n\n点击右上角"登录"按钮进行登录。');
+            window.location.href = '/login';
+            return;
+        }
         if (!selectedDropoff) {
             var input = document.getElementById('dropoff-input');
             input.focus();
@@ -1044,10 +1093,26 @@
                 }
                 localStorage.setItem('mamba_passenger_trips', JSON.stringify(trips));
 
-                // 同步更新司机端本地记录
+                // 同步更新司机端本地记录（处理竞态：司机可能尚未写入）
                 var dTrips = [];
                 try { dTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
-                dTrips.forEach(function(t) { if (t.id === activeTrip.id) t.paid = true; });
+                var dFound = false;
+                dTrips.forEach(function(t) { if (t.id === activeTrip.id) { t.paid = true; dFound = true; } });
+                if (!dFound) {
+                    // 司机尚未保存，乘客代为写入完整记录
+                    dTrips.unshift({
+                        id: activeTrip.id,
+                        passenger_name: activeTrip.passenger_name || passengerName,
+                        driver_name: activeTrip.driver_name || '司机',
+                        pickup: activeTrip.pickup,
+                        dropoff: activeTrip.dropoff,
+                        price: activeTrip.price,
+                        distance: activeTrip.distance,
+                        timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
+                        status: 'completed',
+                        paid: true
+                    });
+                }
                 localStorage.setItem('mamba_completed_trips', JSON.stringify(dTrips));
 
                 // 跨标签页通知：行程已付款
@@ -1059,6 +1124,17 @@
 
                 btn.innerHTML = '✅ 支付成功';
                 btn.className = 'w-full py-3.5 bg-emerald-600 text-white font-extrabold rounded-xl text-sm transition shadow-lg';
+
+                // 到达目的地后，乘客默认位置更新为目的地
+                if (activeTrip) {
+                    var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
+                    var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+                    if (dLng && dLat) {
+                        passengerPosition = { lng: dLng, lat: dLat };
+                        updateUserOnMap();
+                        savePassengerPosition();
+                    }
+                }
 
                 setTimeout(function() { resetBooking(); }, 1500);
             }).catch(function() {
@@ -1181,7 +1257,7 @@
             });
             const marker = L.marker([d.location.lat, d.location.lng], { icon: icon })
                 .addTo(map)
-                .bindTooltip(d.name + (d.status === 'busy' ? ' (载客中)' : ''), { direction: 'top' });
+                .bindTooltip(d.name, { direction: 'top' });
             driverMarkers.push(marker);
         });
     }

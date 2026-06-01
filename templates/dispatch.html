@@ -97,6 +97,11 @@
                             <span class="text-sm font-bold text-slate-800">济南市 225 网格 · Mamba-GNN 时空需求热力图</span>
                         </div>
                         <div class="flex flex-wrap items-center gap-3 text-xs font-semibold">
+                            <button onclick="locateGPS()" id="dispatch-gps-btn"
+                                    class="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg transition shadow-sm"
+                                    title="定位到当前设备位置">
+                                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 我的位置
+                            </button>
                             <label class="flex items-center gap-1.5 cursor-pointer bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg select-none">
                                 <input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmap()" class="rounded text-rose-500 focus:ring-rose-400 border-slate-300" checked>
                                 <span class="text-slate-700">热力图层</span>
@@ -249,6 +254,33 @@
         drawAllGrids();
         updateHeatmapColors();
         updatePredictionLabels();
+    }
+
+    function locateGPS() {
+        if (!navigator.geolocation) {
+            alert('浏览器不支持GPS定位');
+            return;
+        }
+        var btn = document.getElementById('dispatch-gps-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="animate-spin inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full"></span> 定位中';
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                map.setView([pos.coords.latitude, pos.coords.longitude], 14);
+                btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 我的位置';
+                btn.className = 'flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-1.5 rounded-lg transition shadow-sm';
+                btn.disabled = false;
+                if (window.lucide) lucide.createIcons();
+            },
+            function(err) {
+                alert('定位失败，请检查GPS权限');
+                btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 我的位置';
+                btn.className = 'flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg transition shadow-sm';
+                btn.disabled = false;
+                if (window.lucide) lucide.createIcons();
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
     }
 
     function drawAllGrids() {

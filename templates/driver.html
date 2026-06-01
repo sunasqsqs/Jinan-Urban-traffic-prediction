@@ -80,12 +80,12 @@
                 <div class="text-lg sm:text-xl font-black text-emerald-600" id="hud-earnings">¥0.00</div>
             </div>
             <button onclick="locateGPS()" id="gps-locate-btn"
-                class="px-3 sm:px-4 py-2 sm:py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-xs sm:text-sm transition shadow-sm flex items-center gap-1 sm:gap-1.5"
-                title="点击获取 GPS 当前位置">
+                    class="px-3 sm:px-4 py-2 sm:py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-xs sm:text-sm transition shadow-sm flex items-center gap-1 sm:gap-1.5"
+                    title="点击获取 GPS 当前位置">
                 <i data-lucide="crosshair" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i> <span class="hidden sm:inline">定位</span>
             </button>
             <button onclick="toggleOnline()" id="online-btn"
-                class="px-4 sm:px-5 py-2 sm:py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs sm:text-sm transition shadow-sm hover:bg-emerald-600">
+                    class="px-4 sm:px-5 py-2 sm:py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs sm:text-sm transition shadow-sm hover:bg-emerald-600">
                 在线
             </button>
         </div>
@@ -106,11 +106,11 @@
 
                 <!-- 地标快捷导航 -->
                 <div class="flex items-center justify-between mt-2 text-[10px] text-slate-400">
-                <span class="flex items-center gap-1"><i data-lucide="mouse-pointer-click" class="w-3 h-3"></i> 点击地图可修正当前定位</span>
-                <span class="flex items-center gap-1" id="gps-indicator">
+                    <span class="flex items-center gap-1"><i data-lucide="mouse-pointer-click" class="w-3 h-3"></i> 点击地图可修正当前定位</span>
+                    <span class="flex items-center gap-1" id="gps-indicator">
                     <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> 未定位 · 点击右上角📍按钮
                 </span>
-            </div>
+                </div>
 
                 <!-- 地标快捷导航 -->
                 <div class="flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t border-slate-100" id="landmark-btns">
@@ -234,7 +234,15 @@
 
     let driverId = 'driver_' + Math.floor(Math.random() * 100000);
     let driverName = '鲁A·星级车主';
-    let driverPos = { lng: 117.024967, lat: 36.661156 };
+    let driverPos = (function() {
+        try {
+            var saved = JSON.parse(localStorage.getItem('mamba_driver_position'));
+            if (saved && typeof saved.lng === 'number' && typeof saved.lat === 'number') {
+                return saved;
+            }
+        } catch(e) {}
+        return { lng: 117.024967, lat: 36.661156 };
+    })();
     let isOnline = true;
     let activeTrip = null;
     let activeTripId = null;
@@ -301,6 +309,33 @@
         document.getElementById('hud-earnings').innerText = '¥' + earningsToday.toFixed(2);
     }
 
+    function updateLocalTripPaidStatus(tripId) {
+        // 乘客付款后，同步更新司机本地记录为已付款
+        try {
+            var trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
+            var updated = false;
+            trips.forEach(function(t) {
+                if (t.id === tripId) { t.paid = true; updated = true; }
+            });
+            if (updated) {
+                localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
+            }
+        } catch(e) {}
+    }
+
+    function showPaymentToast() {
+        // 显示乘客付款通知
+        var toast = document.createElement('div');
+        toast.className = 'fixed top-4 right-4 bg-emerald-500 text-white px-5 py-3 rounded-xl shadow-lg z-50 text-sm font-bold animate-bounce';
+        toast.innerHTML = '💰 乘客已付款 · 收入已到账';
+        document.body.appendChild(toast);
+        setTimeout(function() {
+            toast.classList.remove('animate-bounce');
+            toast.classList.add('opacity-0', 'transition-opacity', 'duration-500');
+            setTimeout(function() { toast.remove(); }, 500);
+        }, 2500);
+    }
+
     window.addEventListener('load', function() {
         let userRole = 'normal';
         const tok = localStorage.getItem('mamba_auth_token');
@@ -358,10 +393,16 @@
                     if (msg2.action === 'new_trip' && !activeTrip) {
                         startTripPolling();
                     }
+                    // 乘客已付款 → 更新本地记录并刷新收入
+                    if (msg2.action === 'payment_confirmed') {
+                        updateLocalTripPaidStatus(msg2.tripId);
+                        syncEarnings();
+                        showPaymentToast();
+                    }
                 } catch(er) {}
             }
             // 乘客付款或订单状态变化后，重新计算收入
-            if (e.key === 'mamba_trip_sync' || e.key === 'mamba_completed_trips') {
+            if (e.key === 'mamba_completed_trips') {
                 syncEarnings();
             }
         });
@@ -378,16 +419,73 @@
         });
     }
 
-    // ===== GPS 定位（点击按钮触发，模拟真实网约车手动开启定位） =====
+    // ===== GPS 定位（自动获取设备真实位置） =====
     let gpsLocated = false;
     let gpsWatchId = null;
 
+    function saveDriverPosition() {
+        localStorage.setItem('mamba_driver_position', JSON.stringify(driverPos));
+    }
+
     function initGPS() {
-        // 仅初始化默认位置，不自动获取 GPS
-        // 司机需点击右上角「📍 定位」按钮主动开启
+        // 如果已有保存的位置（从 localStorage 恢复或之前手动设置），不再自动定位
+        var hasSaved = false;
+        try {
+            var sp = JSON.parse(localStorage.getItem('mamba_driver_position'));
+            if (sp && typeof sp.lng === 'number') hasSaved = true;
+        } catch(e) {}
+
+        if (hasSaved) {
+            document.getElementById('gps-indicator').innerHTML =
+                '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 已加载上次位置';
+            document.getElementById('gps-display').innerText = driverPos.lng.toFixed(5) + ', ' + driverPos.lat.toFixed(5);
+            var btn = document.getElementById('gps-locate-btn');
+            btn.innerHTML = '<i data-lucide="crosshair" class="w-4 h-4"></i> 定位';
+            if (window.lucide) lucide.createIcons();
+            gpsLocated = true;
+            updateDriverOnMap();
+            updateStatusPanel();
+            return;
+        }
+
+        // 首次使用：自动获取设备 GPS 真实位置
         document.getElementById('gps-indicator').innerHTML =
-            '<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> 未定位 · 点击右上角📍按钮';
+            '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> 正在获取设备位置...';
         document.getElementById('gps-display').innerText = driverPos.lng.toFixed(5) + ', ' + driverPos.lat.toFixed(5);
+
+        if (!navigator.geolocation) {
+            document.getElementById('gps-indicator').innerHTML =
+                '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 浏览器不支持GPS';
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                driverPos = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+                gpsLocated = true;
+                updateDriverOnMap();
+                updateStatusPanel();
+                map.setView([driverPos.lat, driverPos.lng], 15);
+                document.getElementById('gps-indicator').innerHTML =
+                    '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> GPS 已定位 (±' + Math.round(pos.coords.accuracy || 10) + 'm)';
+                document.getElementById('gps-display').innerText = driverPos.lng.toFixed(5) + ', ' + driverPos.lat.toFixed(5);
+                saveDriverPosition();
+
+                var btn = document.getElementById('gps-locate-btn');
+                btn.innerHTML = '<i data-lucide="crosshair" class="w-4 h-4"></i> 已定位';
+                btn.className = 'px-4 py-2.5 bg-emerald-600 text-white font-bold rounded-xl text-sm transition shadow-sm flex items-center gap-1.5';
+                if (window.lucide) lucide.createIcons();
+            },
+            function(err) {
+                document.getElementById('gps-indicator').innerHTML =
+                    '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 定位失败 · 点击📍重试';
+                var btn = document.getElementById('gps-locate-btn');
+                btn.innerHTML = '<i data-lucide="crosshair" class="w-4 h-4"></i> 重试定位';
+                btn.className = 'px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-sm transition shadow-sm flex items-center gap-1.5';
+                if (window.lucide) lucide.createIcons();
+            },
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+        );
     }
 
     function locateGPS() {
@@ -414,15 +512,12 @@
                 document.getElementById('gps-indicator').innerHTML =
                     '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> GPS 已定位 (±' + Math.round(pos.coords.accuracy || 10) + 'm)';
                 document.getElementById('gps-display').innerText = driverPos.lng.toFixed(5) + ', ' + driverPos.lat.toFixed(5);
+                saveDriverPosition();
 
-                // 定位成功后按钮变身"已定位"
                 btn.innerHTML = '<i data-lucide="crosshair" class="w-4 h-4"></i> 已定位';
                 btn.className = 'px-4 py-2.5 bg-emerald-600 text-white font-bold rounded-xl text-sm transition shadow-sm flex items-center gap-1.5';
                 btn.disabled = false;
                 if (window.lucide) lucide.createIcons();
-
-                // 启动持续追踪
-                startGPSWatch();
             },
             function(err) {
                 document.getElementById('gps-indicator').innerHTML =
@@ -432,7 +527,7 @@
                 btn.disabled = false;
                 if (window.lucide) lucide.createIcons();
             },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
         );
     }
 
@@ -450,7 +545,7 @@
                 }
             },
             function() {},
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 }
         );
     }
 
@@ -497,6 +592,7 @@
             driverPos = { lng: e.latlng.lng, lat: e.latlng.lat };
             updateDriverOnMap();
             updateStatusPanel();
+            saveDriverPosition();
         });
 
         updateStatusPanel();
@@ -542,7 +638,7 @@
             document.getElementById('dispatch-orders-panel').classList.add('hidden');
             return;
         }
-        fetch('/api/dispatch/orders')
+        fetch('/api/dispatch/orders?driver_id=' + encodeURIComponent(driverId))
             .then(r => r.json())
             .then(data => {
                 if (data.success) renderDispatchOrders(data.orders);
@@ -564,12 +660,14 @@
         list.innerHTML = '';
 
         orders.forEach(function(order) {
-            // 检查我是否已接受
             var iAccepted = order.accepted_by && order.accepted_by.some(function(a) { return a.driver_id === driverId; });
             var gap = order.needed - order.accepted;
             var isFilled = order.status === 'filled';
 
-            // 如果已补齐或我已接受过，仍在列表中显示但状态不同
+            // 预估目的地收入（基于网格需求预测）
+            var expectedIncome = (order.price_estimate || 30).toFixed(0);
+            var gridDemandHint = '预计目的地可收入 ¥' + expectedIncome + '+';
+
             var card = document.createElement('div');
             var bgClass = iAccepted ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200';
             card.className = bgClass + ' p-3.5 rounded-xl border shadow-sm';
@@ -577,17 +675,17 @@
             var actionHtml = '';
             if (iAccepted) {
                 actionHtml = '<span class="text-[10px] text-emerald-600 font-bold">✅ 已接单 · 前往该区域</span>';
-            } else if (gap <= 0) {
+            } else if (gap <= 0 || isFilled) {
                 actionHtml = '<span class="text-[10px] text-slate-400">已补齐</span>';
             } else {
-                actionHtml = '<button onclick="acceptDispatchOrder(\'' + order.id + '\')" class="w-full py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg text-xs transition">📋 接单 (+¥' + order.price_estimate.toFixed(0) + ')</button>';
+                actionHtml = '<div class="flex gap-2"><button onclick="acceptDispatchOrder(\'' + order.id + '\')" class="flex-1 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg text-xs transition">📋 接单</button><button onclick="ignoreDispatchOrder(\'' + order.id + '\')" class="flex-1 py-2 bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 font-bold rounded-lg text-xs transition">✕ 忽略</button></div>';
             }
 
             card.innerHTML = `
                 <div class="flex justify-between items-start mb-2">
                     <div>
                         <div class="font-bold text-slate-800 text-sm">${order.grid_name}</div>
-                        <div class="text-[10px] text-slate-400 font-mono">预估收入 ¥${order.price_estimate.toFixed(0)}</div>
+                        <div class="text-[10px] text-slate-400 font-mono">${gridDemandHint}</div>
                     </div>
                     <div class="text-right">
                         <div class="text-[10px] text-slate-400">缺口</div>
@@ -627,7 +725,7 @@
                     driver_name: driverName,
                     timestamp: Date.now()
                 }));
-                // 服务器已自动创建行程 → 触发 trip 轮询接取
+                // 服务器已自动创建行程（price=0，调度任务无需付款）
                 if (data.trip) {
                     showActiveOrder(data.trip);
                     startTripPolling();
@@ -642,6 +740,19 @@
             btn.disabled = false;
             if (btn.innerText === '接单中...') btn.innerText = '📋 接单';
         });
+    }
+
+    function ignoreDispatchOrder(orderId) {
+        fetch('/api/dispatch/orders/' + orderId + '/ignore', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ driver_id: driverId })
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                // 立即从列表中移除
+                pollDispatchOrders();
+            }
+        }).catch(() => {});
     }
 
     function startHeartbeat() {
@@ -686,13 +797,23 @@
         activeTrip = trip;
         activeTripId = trip.id;
 
+        var isDispatch = trip.ride_type === 'dispatch_broadcast' || (trip.price === 0 && trip.passenger_id === 'dispatch_sys');
+
         document.getElementById('waiting-card').classList.add('hidden');
         document.getElementById('active-order-card').classList.remove('hidden');
 
         document.getElementById('order-passenger').innerText = trip.passenger_name || '乘客';
         document.getElementById('order-pickup').innerText = (trip.pickup && trip.pickup.name) || '上车点';
         document.getElementById('order-dropoff').innerText = (trip.dropoff && trip.dropoff.name) || '目的地';
-        document.getElementById('order-price').innerText = '¥' + parseFloat(trip.price || 0).toFixed(2);
+
+        if (isDispatch) {
+            // 调度订单：金额为0，显示为调度任务
+            document.getElementById('order-price').innerText = '调度任务 · 免付款';
+            document.getElementById('order-price').className = 'text-sm font-bold text-indigo-600';
+        } else {
+            document.getElementById('order-price').innerText = '¥' + parseFloat(trip.price || 0).toFixed(2);
+            document.getElementById('order-price').className = 'text-xl font-black text-amber-600';
+        }
 
         const pLng = trip.pickup_lng || (trip.pickup && trip.pickup.lng);
         const pLat = trip.pickup_lat || (trip.pickup && trip.pickup.lat);
@@ -716,15 +837,40 @@
         var s = activeTrip.status;
         var tag = document.getElementById('order-status-tag');
         var actions = document.getElementById('order-actions');
+        var isDispatch = activeTrip.ride_type === 'dispatch_broadcast' || (activeTrip.price === 0 && activeTrip.passenger_id === 'dispatch_sys');
 
+        if (isDispatch) {
+            // 调度订单：简化流程，司机直接前往目的地
+            if (s === 'accepted') {
+                tag.innerText = '调度任务';
+                tag.className = 'text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold';
+                actions.innerHTML = '<div class="text-xs text-slate-500 mb-2">📋 调度任务 · 前往 ' + (activeTrip.dropoff && activeTrip.dropoff.name || '目的地') + '</div>';
+                actions.innerHTML += '<button onclick="updateStatus(\'driving\')" class="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-extrabold rounded-xl text-sm transition shadow-sm">前往目的地</button>';
+            } else if (s === 'driving') {
+                tag.innerText = '前往中';
+                tag.className = 'text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold';
+                actions.innerHTML = '<div class="text-xs text-slate-500 mb-2">🚗 正在前往 ' + (activeTrip.dropoff && activeTrip.dropoff.name || '目的地') + '</div>';
+                actions.innerHTML += '<button onclick="updateStatus(\'completed\')" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl text-sm transition shadow-sm">到达目的地 · 完成任务</button>';
+            }
+            // 调度任务可以取消
+            if (s === 'accepted' || s === 'driving') {
+                actions.innerHTML += '<button onclick="driverCancelTrip()" class="w-full mt-2 py-2 bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 font-bold rounded-lg text-xs transition">取消调度任务</button>';
+            }
+            return;
+        }
+
+        // 普通乘客订单
         if (s === 'accepted') {
             tag.innerText = '前往接驾';
+            tag.className = 'text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold';
             actions.innerHTML = '<button onclick="updateStatus(\'arrived\')" class="w-full py-3 bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold rounded-xl text-sm transition shadow-sm">我已到达上车点</button>';
         } else if (s === 'arrived') {
             tag.innerText = '等待乘客';
+            tag.className = 'text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold';
             actions.innerHTML = '<button onclick="updateStatus(\'driving\')" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl text-sm transition shadow-sm animate-pulse">乘客已上车 · 开始行程</button>';
         } else if (s === 'driving') {
             tag.innerText = '行程中';
+            tag.className = 'text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold';
             actions.innerHTML = '<button onclick="updateStatus(\'completed\')" class="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-extrabold rounded-xl text-sm transition shadow-sm">到达目的地 · 完成行程</button>';
         }
 
@@ -736,7 +882,9 @@
 
     function driverCancelTrip() {
         if (!activeTripId) return;
-        if (!confirm('确定要取消此订单吗？取消后乘客将重新叫车。')) return;
+        var isDispatch = activeTrip.ride_type === 'dispatch_broadcast' || (activeTrip.price === 0 && activeTrip.passenger_id === 'dispatch_sys');
+        var msg = isDispatch ? '确定要取消此调度任务吗？' : '确定要取消此订单吗？取消后乘客将重新叫车。';
+        if (!confirm(msg)) return;
 
         fetch('/api/trips/' + activeTripId + '/cancel', {
             method: 'POST',
@@ -751,10 +899,11 @@
                     driver_name: driverName,
                     pickup: activeTrip.pickup,
                     dropoff: activeTrip.dropoff,
-                    price: activeTrip.price,
+                    price: activeTrip.price || 0,
                     distance: activeTrip.distance,
                     timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
-                    status: 'cancelled'
+                    status: 'cancelled',
+                    ride_type: activeTrip.ride_type || 'sd_xuan'
                 };
                 var trips = [];
                 try { trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
@@ -762,12 +911,14 @@
                 if (!exists) { trips.unshift(item); }
                 localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
 
-                // 也写入乘客存储
-                var pTrips = [];
-                try { pTrips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
-                var pExists = pTrips.some(function(t) { return t.id === activeTrip.id; });
-                if (!pExists) { pTrips.unshift(item); }
-                localStorage.setItem('mamba_passenger_trips', JSON.stringify(pTrips));
+                // 也写入乘客存储（非调度订单）
+                if (!isDispatch) {
+                    var pTrips = [];
+                    try { pTrips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
+                    var pExists = pTrips.some(function(t) { return t.id === activeTrip.id; });
+                    if (!pExists) { pTrips.unshift(item); }
+                    localStorage.setItem('mamba_passenger_trips', JSON.stringify(pTrips));
+                }
             }
         }).catch(() => {});
 
@@ -776,6 +927,8 @@
 
     function updateStatus(newStatus) {
         if (!activeTrip) return;
+
+        var isDispatch = activeTrip.ride_type === 'dispatch_broadcast' || (activeTrip.price === 0 && activeTrip.passenger_id === 'dispatch_sys');
 
         if (newStatus === 'arrived') {
             activeTrip.status = 'arrived';
@@ -787,30 +940,39 @@
             routeLine = L.polyline([[pLat, pLng], [dLat, dLng]], { color: '#10b981', weight: 4, opacity: 0.8 }).addTo(map);
         } else if (newStatus === 'driving') {
             activeTrip.status = 'driving';
-            var pLng = activeTrip.pickup_lng || (activeTrip.pickup && activeTrip.pickup.lng);
-            var pLat = activeTrip.pickup_lat || (activeTrip.pickup && activeTrip.pickup.lat);
-            driverPos = { lng: pLng, lat: pLat };
+            // 对于调度订单，司机从当前位置直接前往目的地
+            if (!isDispatch) {
+                var pLng = activeTrip.pickup_lng || (activeTrip.pickup && activeTrip.pickup.lng);
+                var pLat = activeTrip.pickup_lat || (activeTrip.pickup && activeTrip.pickup.lat);
+                driverPos = { lng: pLng, lat: pLat };
+            }
+            // 更新路线：从当前位置到目的地
+            var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
+            var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+            if (routeLine) map.removeLayer(routeLine);
+            routeLine = L.polyline([[driverPos.lat, driverPos.lng], [dLat, dLng]], { color: '#10b981', weight: 4, opacity: 0.8 }).addTo(map);
+            map.fitBounds([[driverPos.lat, driverPos.lng], [dLat, dLng]], { padding: [40, 40] });
             updateDriverOnMap();
             updateStatusPanel();
         } else if (newStatus === 'completed') {
-            // 不在这里 return，统一走下面的 API 调用
-            // 用 syncEarnings 从服务端+localStorage 合并计算，与 orders.html 保持一致
             syncEarnings();
 
             var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
             var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+            // 到达目的地后，司机位置更新为目的地
             driverPos = { lng: dLng, lat: dLat };
             updateDriverOnMap();
             updateStatusPanel();
+            saveDriverPosition();
         }
 
-        // 统一调用服务器 API 更新状态（乘客端轮询依赖此接口获取最新状态）
+        // 统一调用服务器 API 更新状态
         fetch('/api/trips/' + activeTripId + '/status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: newStatus, driver_location: driverPos })
         }).then(function() {
-            // 跨标签页同步：通知乘客端立即刷新
+            // 跨标签页同步
             localStorage.setItem('mamba_trip_sync', JSON.stringify({
                 action: 'status_change',
                 tripId: activeTripId,
@@ -824,12 +986,11 @@
                 timestamp: Date.now()
             }));
             if (newStatus === 'completed') {
-                // 自动收款：直接保存行程记录，不显示确认界面
+                // 调度任务直接保存（无需付款确认），乘客订单也自动保存
                 saveCompleted(activeTrip);
                 resetOrder();
             }
         }).catch(function() {
-            // 网络失败也自动保存
             if (newStatus === 'completed') {
                 activeTrip.status = 'completed';
                 saveCompleted(activeTrip);
@@ -881,17 +1042,19 @@
     }
 
     function saveCompleted(trip) {
+        var isDispatch = trip.ride_type === 'dispatch_broadcast' || (trip.price === 0 && trip.passenger_id === 'dispatch_sys');
         var item = {
             id: trip.id,
             passenger_name: trip.passenger_name,
             driver_name: driverName,
             pickup: trip.pickup,
             dropoff: trip.dropoff,
-            price: trip.price,
+            price: trip.price || 0,
             distance: trip.distance,
             timestamp: new Date().toISOString().replace('T',' ').substring(0, 19),
             status: 'completed',
-            paid: false
+            paid: isDispatch ? true : false,  // 调度任务直接标记完成，无需付款
+            ride_type: trip.ride_type || 'sd_xuan'
         };
         // 写入司机行程记录
         var trips = [];
@@ -901,14 +1064,23 @@
         localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
 
         // 也写入乘客行程（标记未付款，乘客确认支付后会更新为 paid:true）
-        var pTrips = [];
-        try { pTrips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
-        var pExists = pTrips.some(function(t) { return t.id === trip.id; });
-        if (!pExists) { pTrips.unshift(item); }
-        localStorage.setItem('mamba_passenger_trips', JSON.stringify(pTrips));
+        if (!isDispatch) {
+            var pTrips = [];
+            try { pTrips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
+            var pExists = pTrips.some(function(t) { return t.id === trip.id; });
+            if (!pExists) { pTrips.unshift(item); }
+            localStorage.setItem('mamba_passenger_trips', JSON.stringify(pTrips));
+        }
     }
 
     function resetOrder() {
+        // 保存目的地位置，完成后司机位置自动设为目的地
+        var destLng = null, destLat = null;
+        if (activeTrip) {
+            destLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
+            destLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+        }
+
         activeTrip = null;
         activeTripId = null;
         if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
@@ -917,9 +1089,22 @@
         document.getElementById('active-order-card').classList.add('hidden');
         document.getElementById('earnings-card').classList.add('hidden');
         document.getElementById('waiting-card').classList.remove('hidden');
+
+        // 重置订单价格样式
+        document.getElementById('order-price').className = 'text-xl font-black text-amber-600';
+
+        // 完成订单后，默认当前位置更新为目的地，继续听单
+        if (destLng && destLat) {
+            driverPos = { lng: destLng, lat: destLat };
+            updateDriverOnMap();
+            updateStatusPanel();
+            map.setView([destLat, destLng], 14);
+        }
+
         // 立即开始接下一单
         startTripPolling();
         pollDispatchOrders();
+        syncEarnings();
     }
 
     // 在线计时%20results

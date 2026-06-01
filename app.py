@@ -24,6 +24,7 @@ TAXI_TRIPS = {}         # 存放所有打车行程 {trip_id: {passenger_id, pass
 SEED_PASSENGERS = {}    # 预置乘客账号 (服务器内存缓存)
 DISPATCH_ORDERS = {}    # 网格调度广播订单 {order_id: {grid_id, needed, accepted, accepted_by[], status}}
 LATEST_DISPATCH_ALERT = None  # 存放最新的智能调度派发指令
+IGNORED_DISPATCH_ORDERS = {}  # 司机忽略的调度订单 {driver_id: set(order_ids)}
 
 # 济南市核心商圈地标 (与高德地图高精度坐标完全绑定)
 JINAN_LANDMARKS = [
@@ -536,6 +537,24 @@ def get_driver_trips():
                  if t.get("driver_id") == driver_id]
     return jsonify({"success": True, "trips": trips})
 
+@app.route('/api/admin/all-trips', methods=['GET'])
+def get_all_trips_admin():
+    """管理员/高级用户获取所有行程（含乘客订单和调度订单）"""
+    with taxi_state_lock:
+        all_trips = list(TAXI_TRIPS.values())
+        # 附加调度订单信息
+        for trip in all_trips:
+            dispatch_id = trip.get("dispatch_order_id")
+            if dispatch_id and dispatch_id in DISPATCH_ORDERS:
+                trip["dispatch_info"] = {
+                    "grid_id": DISPATCH_ORDERS[dispatch_id]["grid_id"],
+                    "grid_name": DISPATCH_ORDERS[dispatch_id]["grid_name"],
+                    "needed": DISPATCH_ORDERS[dispatch_id]["needed"],
+                    "accepted": DISPATCH_ORDERS[dispatch_id]["accepted"]
+                }
+        all_trips.sort(key=lambda t: t.get("created_at", 0), reverse=True)
+    return jsonify({"success": True, "trips": all_trips})
+
 # 5.7 车载实时在线即时通信
 @app.route('/api/trips/<trip_id>/chat', methods=['POST'])
 def send_chat(trip_id):
@@ -663,14 +682,18 @@ def broadcast_dispatch_order():
 
 @app.route('/api/dispatch/orders', methods=['GET'])
 def get_dispatch_orders():
-    """获取所有广播中的调度订单（司机端轮询）"""
+    """获取所有广播中的调度订单（司机端轮询，过滤已忽略的）"""
+    driver_id = request.args.get('driver_id', '')
     with taxi_state_lock:
         orders = [
             {**o, "accepted_by": o["accepted_by"][:]}
             for o in DISPATCH_ORDERS.values()
             if o["status"] == "broadcasting"
         ]
-        # 按创建时间倒序
+        # 过滤掉该司机已忽略的订单
+        if driver_id and driver_id in IGNORED_DISPATCH_ORDERS:
+            ignored = IGNORED_DISPATCH_ORDERS[driver_id]
+            orders = [o for o in orders if o["id"] not in ignored]
         orders.sort(key=lambda o: o["created_at"], reverse=True)
     return jsonify({"success": True, "orders": orders})
 
@@ -735,7 +758,7 @@ def accept_dispatch_order(order_id):
             "dropoff_lng": order["lng"],
             "dropoff_lat": order["lat"],
             "status": "accepted",
-            "price": order.get("price", 30),
+            "price": 0,
             "distance": round(haversine_distance(
                 driver_loc["lng"] if driver_loc else order["lng"],
                 driver_loc["lat"] if driver_loc else order["lat"],
@@ -757,6 +780,19 @@ def accept_dispatch_order(order_id):
             TAXI_DRIVERS[driver_id]["status"] = "busy"
 
         return jsonify({"success": True, "order": order, "trip": TAXI_TRIPS[trip_id]})
+
+@app.route('/api/dispatch/orders/<order_id>/ignore', methods=['POST'])
+def ignore_dispatch_order(order_id):
+    """司机忽略一条调度订单"""
+    data = request.json
+    driver_id = data.get("driver_id")
+    if not driver_id:
+        return jsonify({"success": False, "message": "缺少司机ID"}), 400
+    with taxi_state_lock:
+        if driver_id not in IGNORED_DISPATCH_ORDERS:
+            IGNORED_DISPATCH_ORDERS[driver_id] = set()
+        IGNORED_DISPATCH_ORDERS[driver_id].add(order_id)
+    return jsonify({"success": True})
 
 @app.route('/api/dispatch/orders/<order_id>/cancel', methods=['POST'])
 def cancel_dispatch_order(order_id):
