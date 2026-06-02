@@ -610,7 +610,9 @@
 
         let totalEarnings = 0;
         finalTrips.forEach(t => {
-            totalEarnings += parseFloat(t.price || 0);
+            if (t.status === 'completed') {
+                totalEarnings += parseFloat(t.price || 0);
+            }
         });
 
         completedTripsCount = finalTrips.length;

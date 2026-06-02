@@ -311,7 +311,8 @@
 
         // 统计
         document.getElementById('stats-count').innerHTML = trips.length + ' <span class="text-xs font-normal text-slate-500">次</span>';
-        const total = trips.reduce(function(s, t) { return s + parseFloat(t.price || 0); }, 0);
+        // 统计：仅已完成的行程计入收入/消费
+        const total = trips.reduce(function(s, t) { return s + (t.status === 'completed' ? parseFloat(t.price || 0) : 0); }, 0);
         document.getElementById('stats-total').innerText = '¥' + total.toFixed(2);
 
         // 最常用目的地

@@ -329,8 +329,9 @@
         for (var di = 0; di < deletedIds.length; di++) { deletedSet[deletedIds[di]] = true; }
         allTrips = allTrips.filter(function(t) { return !deletedSet[t.id]; });
 
-        // 4. 计算今日收入
+        // 4. 计算今日收入（仅已完成的行程）
         earningsToday = allTrips.reduce(function(s, t) {
+            if (t.status !== 'completed') return s;
             return s + parseFloat(t.price || 0);
         }, 0);
         document.getElementById('hud-earnings').innerText = '¥' + earningsToday.toFixed(2);
