@@ -43,6 +43,25 @@
             </div>
         </div>
     </div>
+
+    <!-- 付款弹窗（隐藏） -->
+    <div id="payment-modal" class="fixed inset-0 z-50 hidden" style="background: rgba(0,0,0,0.5);">
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-white rounded-2xl shadow-2xl p-6">
+            <div class="text-center mb-4">
+                <div class="text-3xl mb-2">💳</div>
+                <h3 class="text-lg font-black text-slate-800">确认付款</h3>
+                <p class="text-xs text-slate-400 mt-1" id="modal-trip-info">--</p>
+            </div>
+            <div class="bg-amber-50 rounded-xl p-4 mb-4 text-center">
+                <div class="text-[10px] text-amber-500 font-bold uppercase mb-1">支付金额</div>
+                <div class="text-3xl font-black text-amber-600" id="modal-trip-price">¥0.00</div>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="closePaymentModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl text-sm transition">取消</button>
+                <button onclick="submitPayment()" id="modal-pay-btn" class="flex-1 py-2.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold rounded-xl text-sm transition shadow-lg">确认支付</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -356,8 +375,8 @@
                 if (isDispatch) {
                     statusBadge = '<div class="text-[9px] text-indigo-500 font-bold bg-indigo-50 px-1.5 py-0.5 rounded mt-1">调度完成</div>';
                 } else if (trip.paid === false && serverHasRecord) {
-                    // 仅当服务端确实标记为未付款时才显示"待付款"
-                    statusBadge = '<div class="text-[9px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded mt-1 flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-amber-500 animate-pulse"></span>待付款</div>';
+                    // 仅当服务端确实标记为未付款时才显示"待付款"（可点击付款）
+                    statusBadge = '<div class="text-[9px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded mt-1 flex items-center gap-1 cursor-pointer hover:bg-amber-100 transition" onclick="event.stopPropagation(); openPaymentModal(\'' + trip.id + '\', \'' + (trip.pickup && trip.pickup.name ? trip.pickup.name.replace(/'/g, "\\'") : '--') + '\', \'' + (trip.dropoff && trip.dropoff.name ? trip.dropoff.name.replace(/'/g, "\\'") : '--') + '\', ' + parseFloat(trip.price || 0).toFixed(2) + ')"><span class="w-1 h-1 rounded-full bg-amber-500 animate-pulse"></span>待付款</div>';
                 } else if (trip.paid === false && !serverHasRecord) {
                     // 服务器可能重启过，无法确认付款状态 → 显示"已完成"（避免误导）
                     statusBadge = '<div class="text-[9px] text-emerald-500 font-bold bg-emerald-50 px-1.5 py-0.5 rounded mt-1">已完成</div>';
@@ -475,5 +494,68 @@
             renderTrips();
         }
     });
+
+    // ===== 付款弹窗 =====
+    var pendingPaymentTripId = null;
+
+    function openPaymentModal(tripId, pickupName, dropoffName, price) {
+        pendingPaymentTripId = tripId;
+        document.getElementById('modal-trip-info').innerText = pickupName + ' → ' + dropoffName;
+        document.getElementById('modal-trip-price').innerText = '¥' + price.toFixed(2);
+        document.getElementById('payment-modal').classList.remove('hidden');
+    }
+
+    function closePaymentModal() {
+        pendingPaymentTripId = null;
+        document.getElementById('payment-modal').classList.add('hidden');
+        var btn = document.getElementById('modal-pay-btn');
+        btn.disabled = false;
+        btn.innerText = '确认支付';
+    }
+
+    function submitPayment() {
+        if (!pendingPaymentTripId) return;
+        var btn = document.getElementById('modal-pay-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></span>支付中...';
+
+        fetch('/api/trips/' + pendingPaymentTripId + '/pay', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    // 更新 localStorage 中该行程的 paid 状态
+                    try {
+                        var trips = JSON.parse(localStorage.getItem(tripsStorageKey())) || [];
+                        for (var i = 0; i < trips.length; i++) {
+                            if (trips[i].id === pendingPaymentTripId) {
+                                trips[i].paid = true;
+                            }
+                        }
+                        localStorage.setItem(tripsStorageKey(), JSON.stringify(trips));
+                    } catch(e) {}
+
+                    // 跨标签页通知：行程已付款
+                    localStorage.setItem('mamba_trip_sync', JSON.stringify({
+                        action: 'payment_confirmed',
+                        tripId: pendingPaymentTripId,
+                        timestamp: Date.now()
+                    }));
+
+                    btn.innerHTML = '✅ 支付成功';
+                    setTimeout(function() {
+                        closePaymentModal();
+                        renderTrips();
+                    }, 800);
+                } else {
+                    alert('支付失败：' + (data.message || '未知错误'));
+                    btn.disabled = false;
+                    btn.innerText = '确认支付';
+                }
+            }).catch(function() {
+                alert('网络错误，支付失败');
+                btn.disabled = false;
+                btn.innerText = '确认支付';
+            });
+    }
 </script>
 {% endblock %}
