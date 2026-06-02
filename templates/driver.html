@@ -250,7 +250,8 @@
     let driverMarker = null;
     let pickupMarker = null;
     let dropoffMarker = null;
-    let routeLine = null;
+    let routeLine = null;      // 当前位置 → 上车点（虚线）
+    let destRouteLine = null;  // 上车点 → 目的地（实线）
     let heartbeatTimer = null;
     let tripPollTimer = null;
     let activeTripPollTimer = null;  // 活跃订单状态轮询（检测对方取消/完成）
@@ -623,7 +624,7 @@
         driverMarker = L.marker([driverPos.lat, driverPos.lng], { icon: carIcon }).addTo(map);
 
         const greenIcon = L.divIcon({
-            html: '<div class="bg-emerald-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs font-bold border-2 border-white shadow">A</div>',
+            html: '<div class="bg-emerald-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold border-2 border-white shadow">🧑</div>',
             className: '', iconSize: [28,28], iconAnchor: [14,14]
         });
         const redIcon = L.divIcon({
@@ -930,11 +931,23 @@
         dropoffMarker.setLatLng([dLat, dLng]).addTo(map);
 
         if (routeLine) map.removeLayer(routeLine);
+        if (destRouteLine) map.removeLayer(destRouteLine);
+        // 虚线：司机当前位置 → 乘客上车点
         routeLine = L.polyline([[driverPos.lat, driverPos.lng], [pLat, pLng]], {
             color: '#6366f1', weight: 4, dashArray: '8, 8', opacity: 0.8
         }).addTo(map);
+        // 实线：乘客上车点 → 目的地
+        destRouteLine = L.polyline([[pLat, pLng], [dLat, dLng]], {
+            color: '#10b981', weight: 4, opacity: 0.7
+        }).addTo(map);
 
-        map.fitBounds([[driverPos.lat, driverPos.lng], [dLat, dLng]], { padding: [40, 40] });
+        // 视图包含司机、乘客(上车点)、目的地三点
+        var bounds = L.latLngBounds(
+            [driverPos.lat, driverPos.lng],
+            [dLat, dLng]
+        );
+        bounds.extend([pLat, pLng]);
+        map.fitBounds(bounds, { padding: [40, 40] });
 
         renderOrderActions();
         startActiveTripStatusPolling();  // 持续监听对方取消
@@ -990,6 +1003,11 @@
     function driverCancelTrip() {
         if (!activeTripId) return;
         var isDispatch = activeTrip.ride_type === 'dispatch_broadcast' || (activeTrip.price === 0 && activeTrip.passenger_id === 'dispatch_sys');
+        // 普通订单：行程中（driving）不允许司机取消
+        if (!isDispatch && activeTrip && activeTrip.status === 'driving') {
+            alert('行程进行中，无法取消订单。');
+            return;
+        }
         var msg = isDispatch ? '确定要取消此调度任务吗？' : '确定要取消此订单吗？取消后乘客将重新叫车。';
         if (!confirm(msg)) return;
 
@@ -1051,21 +1069,33 @@
             var pLat = activeTrip.pickup_lat || (activeTrip.pickup && activeTrip.pickup.lat);
             var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
             var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+            // 司机到达上车点，图标移到上车点附近（微偏移，避免盖住乘客图标）
+            driverPos = { lng: pLng + 0.0003, lat: pLat + 0.0002 };
+            updateDriverOnMap();
+            updateStatusPanel();
+            saveDriverPosition();
+            // 虚线移除（司机已到达乘客位置），仅保留 乘客→目的地 实线
             if (routeLine) map.removeLayer(routeLine);
-            routeLine = L.polyline([[pLat, pLng], [dLat, dLng]], { color: '#10b981', weight: 4, opacity: 0.8 }).addTo(map);
+            routeLine = null;
+            if (destRouteLine) map.removeLayer(destRouteLine);
+            destRouteLine = L.polyline([[pLat, pLng], [dLat, dLng]], { color: '#10b981', weight: 4, opacity: 0.8 }).addTo(map);
         } else if (newStatus === 'driving') {
             activeTrip.status = 'driving';
             // 对于调度订单，司机从当前位置直接前往目的地
             if (!isDispatch) {
                 var pLng = activeTrip.pickup_lng || (activeTrip.pickup && activeTrip.pickup.lng);
                 var pLat = activeTrip.pickup_lat || (activeTrip.pickup && activeTrip.pickup.lat);
-                driverPos = { lng: pLng, lat: pLat };
+                // 微偏移避免盖住乘客图标
+                driverPos = { lng: pLng + 0.0003, lat: pLat + 0.0002 };
             }
             // 更新路线：从当前位置到目的地
             var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
             var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+            // 清除旧线，画新实线：当前位置 → 目的地
             if (routeLine) map.removeLayer(routeLine);
-            routeLine = L.polyline([[driverPos.lat, driverPos.lng], [dLat, dLng]], { color: '#10b981', weight: 4, opacity: 0.8 }).addTo(map);
+            routeLine = null;
+            if (destRouteLine) map.removeLayer(destRouteLine);
+            destRouteLine = L.polyline([[driverPos.lat, driverPos.lng], [dLat, dLng]], { color: '#10b981', weight: 4, opacity: 0.8 }).addTo(map);
             map.fitBounds([[driverPos.lat, driverPos.lng], [dLat, dLng]], { padding: [40, 40] });
             updateDriverOnMap();
             updateStatusPanel();
@@ -1074,8 +1104,8 @@
 
             var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
             var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
-            // 到达目的地后，司机位置更新为目的地
-            driverPos = { lng: dLng, lat: dLat };
+            // 到达目的地后，司机位置更新为目的地（微偏移，避免盖住目的地标记）
+            driverPos = { lng: dLng + 0.0003, lat: dLat + 0.0002 };
             updateDriverOnMap();
             updateStatusPanel();
             saveDriverPosition();
@@ -1092,6 +1122,7 @@
                 action: 'status_change',
                 tripId: activeTripId,
                 status: newStatus,
+                driver_id: driverId,
                 driver_name: activeTrip.driver_name,
                 driver_vehicle: activeTrip.driver_vehicle,
                 price: activeTrip.price,
@@ -1212,6 +1243,7 @@
         activeTripId = null;
         if (activeTripPollTimer) { clearInterval(activeTripPollTimer); activeTripPollTimer = null; }
         if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+        if (destRouteLine) { map.removeLayer(destRouteLine); destRouteLine = null; }
         map.removeLayer(pickupMarker);
         map.removeLayer(dropoffMarker);
         document.getElementById('active-order-card').classList.add('hidden');

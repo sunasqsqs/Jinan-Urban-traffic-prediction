@@ -202,7 +202,7 @@
                         <span class="text-lg font-black text-amber-600" id="trip-price">¥ --</span>
                     </div>
                 </div>
-                <button onclick="cancelTrip()" class="w-full mt-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-lg text-xs transition">
+                <button onclick="cancelTrip()" id="cancel-trip-btn" class="w-full mt-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-lg text-xs transition">
                     取消行程
                 </button>
             </div>
@@ -267,9 +267,18 @@
     let map = null;
     let userMarker = null;
     let driverMarkers = [];
+    let assignedDriverMarker = null;  // 当前接单司机的专属图标
+    let routeLine = null;      // 司机 → 上车点（虚线）
+    let destRouteLine = null;  // 上车点 → 目的地（实线）
     let tripPollTimer = null;
     let gpsWatchId = null;
     let gpsLocated = false;
+
+    function dist(lng1, lat1, lng2, lat2) {
+        const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
 
     const JINAN_LANDMARKS = [
         // ===== 交通枢纽 =====
@@ -616,6 +625,7 @@
                     if (msg.action === 'status_change' && msg.tripId === activeTripId) {
                         // 司机更新了状态 → 立即更新本地显示
                         activeTrip.status = msg.status;
+                        activeTrip.driver_id = msg.driver_id || activeTrip.driver_id;
                         activeTrip.driver_name = msg.driver_name || activeTrip.driver_name;
                         activeTrip.driver_vehicle = msg.driver_vehicle || activeTrip.driver_vehicle;
                         showTripStatus();
@@ -962,7 +972,7 @@
             html: '<div class="bg-cyan-500 text-white rounded-full w-10 h-10 flex items-center justify-center text-lg font-bold border-2 border-white shadow-lg" style="box-shadow: 0 0 0 0 rgba(6,182,212,0.5); animation: pulse-gps 2s infinite cubic-bezier(0.66,0,0,1);">🧑</div>',
             className: '', iconSize: [40,40], iconAnchor: [20,20]
         });
-        userMarker = L.marker([passengerPosition.lat, passengerPosition.lng], { icon: userIcon }).addTo(map)
+        userMarker = L.marker([passengerPosition.lat, passengerPosition.lng], { icon: userIcon, zIndexOffset: 2000 }).addTo(map)
             .bindTooltip(passengerName, { direction: 'top', offset: [0, -20] });
 
         // 地标标记
@@ -1114,11 +1124,68 @@
         document.getElementById('trip-pickup').innerText = (activeTrip.pickup && activeTrip.pickup.name) || '上车点';
         document.getElementById('trip-dropoff').innerText = (activeTrip.dropoff && activeTrip.dropoff.name) || '目的地';
         document.getElementById('trip-price').innerText = '¥ ' + parseFloat(activeTrip.price || 0).toFixed(2);
+
+        // 行程中（driving）不允许取消，隐藏取消按钮
+        var cancelBtn = document.getElementById('cancel-trip-btn');
+        if (cancelBtn) {
+            cancelBtn.style.display = (activeTrip.status === 'driving') ? 'none' : '';
+        }
+
+        // 立即拉取司机位置，在地图上显示司机图标
+        if (activeTrip.driver_id && activeTrip.status !== 'searching') {
+            pollNearbyDrivers();
+        }
+
+        // 绘制路线连线
+        drawPassengerRoutes();
+    }
+
+    function drawPassengerRoutes() {
+        // 清除旧线
+        if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+        if (destRouteLine) { map.removeLayer(destRouteLine); destRouteLine = null; }
+
+        if (!activeTrip) return;
+
+        var pLng = activeTrip.pickup_lng || (activeTrip.pickup && activeTrip.pickup.lng);
+        var pLat = activeTrip.pickup_lat || (activeTrip.pickup && activeTrip.pickup.lat);
+        var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
+        var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+
+        if (!pLng || !pLat || !dLng || !dLat) return;
+
+        // 实线：上车点 → 目的地
+        destRouteLine = L.polyline([[pLat, pLng], [dLat, dLng]], {
+            color: '#10b981', weight: 4, opacity: 0.7
+        }).addTo(map);
+
+        // 虚线：司机 → 上车点（用专属司机标记的当前位置）
+        if (assignedDriverMarker && activeTrip.status !== 'completed' && activeTrip.status !== 'cancelled') {
+            var drvPos = assignedDriverMarker.getLatLng();
+            if (drvPos) {
+                var distToPickup = dist(drvPos.lng, drvPos.lat, pLng, pLat);
+                if (distToPickup > 0.03) {  // 距离>30m才画虚线
+                    routeLine = L.polyline([[drvPos.lat, drvPos.lng], [pLat, pLng]], {
+                        color: '#6366f1', weight: 4, dashArray: '8, 8', opacity: 0.8
+                    }).addTo(map);
+                }
+            }
+        }
+
+        // 行程中：从当前位置（乘客在车上）→ 目的地
+        if (activeTrip.status === 'driving') {
+            if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+            destRouteLine.setLatLngs([[passengerPosition.lat, passengerPosition.lng], [dLat, dLng]]);
+        }
     }
 
     // ===== 结账确认卡 =====
     function showCheckout() {
         clearInterval(tripPollTimer);
+        // 到达目的地，清除司机图标和路线
+        if (assignedDriverMarker) { map.removeLayer(assignedDriverMarker); assignedDriverMarker = null; }
+        if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+        if (destRouteLine) { map.removeLayer(destRouteLine); destRouteLine = null; }
         document.getElementById('booking-panel').classList.add('hidden');
         document.getElementById('trip-status-card').classList.add('hidden');
         document.getElementById('checkout-card').classList.remove('hidden');
@@ -1280,6 +1347,11 @@
             resetBooking();
             return;
         }
+        // 行程中（driving）不允许取消
+        if (activeTrip && activeTrip.status === 'driving') {
+            alert('行程进行中，无法取消订单。如需帮助请联系司机。');
+            return;
+        }
         if (!confirm('确定取消当前行程吗？')) return;
 
         fetch('/api/trips/' + activeTripId + '/cancel', {
@@ -1324,6 +1396,11 @@
         if (tripPollTimer) clearInterval(tripPollTimer);
         activeTrip = null;
         activeTripId = null;
+        // 清除指定司机图标
+        if (assignedDriverMarker) { map.removeLayer(assignedDriverMarker); assignedDriverMarker = null; }
+        // 清除路线
+        if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+        if (destRouteLine) { map.removeLayer(destRouteLine); destRouteLine = null; }
         document.getElementById('booking-panel').classList.remove('hidden');
         document.getElementById('trip-status-card').classList.add('hidden');
         document.getElementById('checkout-card').classList.add('hidden');
@@ -1364,9 +1441,19 @@
     }
 
     function updateDriverMarkers(drivers) {
+        // 清除普通司机标记（保留指定司机标记单独管理）
         driverMarkers.forEach(function(m) { map.removeLayer(m); });
         driverMarkers = [];
+
+        var assignedDriverId = activeTrip ? activeTrip.driver_id : null;
+
         drivers.forEach(function(d) {
+            // 跳过已分配的司机（用专属图标显示）
+            if (assignedDriverId && d.driver_id === assignedDriverId) {
+                updateAssignedDriverMarker(d);
+                return;
+            }
+            // 普通在线司机
             const icon = L.divIcon({
                 html: '<div class="bg-amber-400 text-white rounded-full w-6 h-6 flex items-center justify-center text-[10px] font-bold border border-white shadow">🚕</div>',
                 className: '', iconSize: [24,24], iconAnchor: [12,12]
@@ -1376,6 +1463,61 @@
                 .bindTooltip(d.name, { direction: 'top' });
             driverMarkers.push(marker);
         });
+
+        // 如果已分配司机但不在列表中（可能心跳延迟），不清除已有标记
+        if (assignedDriverId && !drivers.some(function(d) { return d.driver_id === assignedDriverId; })) {
+            // 司机暂时不在线，保持上一次位置
+        } else if (!assignedDriverId && assignedDriverMarker) {
+            // 没有活跃行程，清除指定司机标记
+            map.removeLayer(assignedDriverMarker);
+            assignedDriverMarker = null;
+        }
+
+        // 有活跃行程时，自动调整地图视野同时显示乘客和司机
+        if (activeTrip && assignedDriverMarker) {
+            var dPos = assignedDriverMarker.getLatLng();
+            var bounds = L.latLngBounds(
+                [passengerPosition.lat, passengerPosition.lng],
+                [dPos.lat, dPos.lng]
+            );
+            // 也包含目的地方向
+            var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
+            var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+            if (dLng && dLat) {
+                bounds.extend([dLat, dLng]);
+            }
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+        }
+
+        // 更新路线连线（司机位置变了）
+        if (activeTrip) drawPassengerRoutes();
+    }
+
+    function updateAssignedDriverMarker(driver) {
+        var dLat = driver.location.lat;
+        var dLng = driver.location.lng;
+        // 如果司机离乘客很近（<50m），微偏移避免图标互相遮盖
+        var distToPassenger = dist(dLng, dLat, passengerPosition.lng, passengerPosition.lat);
+        if (distToPassenger < 0.05) {
+            dLng += 0.0003;
+            dLat += 0.0002;
+        }
+        var dPos = [dLat, dLng];
+        if (assignedDriverMarker) {
+            assignedDriverMarker.setLatLng(dPos);
+            assignedDriverMarker.setTooltipContent(driver.name + ' · 您的司机');
+        } else {
+            // 专属司机图标：更大、更醒目、带光晕
+            var driverIcon = L.divIcon({
+                html: '<div style="background:#f59e0b;color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:18px;border:3px solid #fff;box-shadow:0 0 0 6px rgba(245,158,11,0.3), 0 4px 12px rgba(0,0,0,0.2);animation:pulse-gps 2s infinite cubic-bezier(0.66,0,0,1)">🚕</div>',
+                className: '', iconSize: [36,36], iconAnchor: [18,18]
+            });
+            assignedDriverMarker = L.marker(dPos, { icon: driverIcon, zIndexOffset: 1000 })
+                .addTo(map)
+                .bindTooltip(driver.name + ' · 您的司机', { direction: 'top' });
+        }
+        // 更新路线连线
+        if (activeTrip) drawPassengerRoutes();
     }
 
     // GPS pulse animation

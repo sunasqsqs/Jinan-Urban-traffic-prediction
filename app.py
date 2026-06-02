@@ -614,7 +614,7 @@ def get_online_drivers():
     with taxi_state_lock:
         now = time.time()
         active_drivers = [d for d in TAXI_DRIVERS.values()
-                          if d.get("status") == "online" and now - d["updated_at"] < 30]
+                          if d.get("status") != "offline" and now - d["updated_at"] < 30]
         return jsonify({"success": True, "drivers": active_drivers})
 
 # 5.10 乘客端获取行程历史 (从 localStorage 同步到服务端)
