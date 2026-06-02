@@ -157,6 +157,7 @@ def get_experiment_data(dataset_override=None):
     return {}
 
 # ================= 3. 系统核心路由 =================
+
 @app.route('/')
 def index(): return render_template('index.html', page="index")
 
@@ -377,6 +378,7 @@ def create_trip():
                 new_trip["driver_location"] = driver["location"]
                 TAXI_DRIVERS[did]["status"] = "busy"
 
+
     return jsonify({"success": True, "trip": new_trip})
 
 # 5.2 获取行程详情
@@ -490,6 +492,7 @@ def accept_trip(trip_id):
             trip["driver_vehicle"] = TAXI_DRIVERS[driver_id].get("vehicle", "")
             trip["driver_rating"] = TAXI_DRIVERS[driver_id].get("rating", 0)
 
+
         return jsonify({"success": True, "trip": trip})
 
 # 5.6 司机更新行程状态
@@ -513,6 +516,7 @@ def update_trip_status(trip_id):
         if new_status == "completed":
             trip["paid"] = False  # 初始标记为未付款
 
+
         return jsonify({"success": True, "trip": trip})
 
 # 5.7 乘客付款确认
@@ -524,6 +528,7 @@ def pay_trip(trip_id):
             return jsonify({"success": False, "message": "未找到指定行程"}), 404
         trip["paid"] = True
         trip["paid_at"] = time.time()
+
         return jsonify({"success": True, "trip": trip})
 
 # 5.8 司机查询已完成的行程（含付款状态）
@@ -608,7 +613,8 @@ def driver_heartbeat():
 def get_online_drivers():
     with taxi_state_lock:
         now = time.time()
-        active_drivers = [d for d in TAXI_DRIVERS.values() if now - d["updated_at"] < 30]
+        active_drivers = [d for d in TAXI_DRIVERS.values()
+                          if d.get("status") == "online" and now - d["updated_at"] < 30]
         return jsonify({"success": True, "drivers": active_drivers})
 
 # 5.10 乘客端获取行程历史 (从 localStorage 同步到服务端)
@@ -779,6 +785,7 @@ def accept_dispatch_order(order_id):
         if driver_id in TAXI_DRIVERS:
             TAXI_DRIVERS[driver_id]["status"] = "busy"
 
+
         return jsonify({"success": True, "order": order, "trip": TAXI_TRIPS[trip_id]})
 
 @app.route('/api/dispatch/orders/<order_id>/ignore', methods=['POST'])
@@ -826,6 +833,7 @@ def cancel_trip(trip_id):
         driver_id = trip.get("driver_id")
         if driver_id and driver_id in TAXI_DRIVERS:
             TAXI_DRIVERS[driver_id]["status"] = "online"
+
 
         return jsonify({"success": True, "trip": trip})
 

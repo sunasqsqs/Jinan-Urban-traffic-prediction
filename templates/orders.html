@@ -475,7 +475,7 @@
         if (e.key === 'mamba_trip_sync' && e.newValue) {
             try {
                 var msg = JSON.parse(e.newValue);
-                if (msg.action === 'payment_confirmed' || msg.action === 'earnings_confirmed') {
+                if (msg.action === 'payment_confirmed' || msg.action === 'earnings_confirmed' || msg.action === 'trip_cancelled') {
                     renderTrips();
                 }
             } catch(er) {}

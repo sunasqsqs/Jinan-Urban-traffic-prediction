@@ -85,7 +85,7 @@
                 <i data-lucide="crosshair" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i> <span class="hidden sm:inline">定位</span>
             </button>
             <button onclick="toggleOnline()" id="online-btn"
-                    class="px-4 sm:px-5 py-2 sm:py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs sm:text-sm transition shadow-sm hover:bg-emerald-600">
+                    class="px-4 sm:px-5 py-2 sm:py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-xs sm:text-sm transition shadow-sm">
                 在线
             </button>
         </div>
@@ -253,6 +253,7 @@
     let routeLine = null;
     let heartbeatTimer = null;
     let tripPollTimer = null;
+    let activeTripPollTimer = null;  // 活跃订单状态轮询（检测对方取消/完成）
     let earningsToday = 0;
     let onlineSince = Date.now();
 
@@ -269,17 +270,24 @@
     }
 
     async function syncEarnings() {
-        // 与 orders.html 一致：从服务端 + localStorage 合并计算总收入
+        // 今日收入：仅计算当天完成的行程金额之和
+        var todayStr = new Date().toISOString().substring(0, 10);  // "2026-06-02"
+        var todayStart = new Date(todayStr + 'T00:00:00+08:00').getTime() / 1000;  // 北京时间0点 Unix 秒
+        var todayEnd = todayStart + 86400;
+
         let allTrips = [];
         const seen = {};
 
-        // 1. 从服务端获取（含权威 paid 状态）
+        // 1. 从服务端获取（含权威 paid 状态），仅保留今天的
         try {
             const res = await fetch('/api/driver/trips?driver_id=' + encodeURIComponent(driverId));
             const data = await res.json();
             if (data.success && data.trips) {
                 data.trips.forEach(function(t) {
                     if (!seen[t.id]) {
+                        // 服务器 created_at 为 Unix 秒时间戳，过滤非当天行程
+                        var tripTime = t.created_at || 0;
+                        if (tripTime < todayStart || tripTime >= todayEnd) return;
                         seen[t.id] = true;
                         allTrips.push({
                             id: t.id,
@@ -291,18 +299,20 @@
             }
         } catch(e) { console.error('syncEarnings: 获取服务端行程失败:', e); }
 
-        // 2. 从 localStorage 合并（去重）
+        // 2. 从 localStorage 合并（去重），仅保留今天的
         try {
             const localTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
             localTrips.forEach(function(t) {
                 if (!seen[t.id]) {
+                    // localStorage timestamp 格式如 "2026-06-02 14:30:00"，过滤非当天
+                    if (t.timestamp && t.timestamp.substring(0, 10) !== todayStr) return;
                     seen[t.id] = true;
                     allTrips.push(t);
                 }
             });
         } catch(e) {}
 
-        // 3. 计算总收入（与 orders.html 一致：所有行程的 price 之和）
+        // 3. 计算今日收入
         earningsToday = allTrips.reduce(function(s, t) {
             return s + parseFloat(t.price || 0);
         }, 0);
@@ -323,6 +333,28 @@
         } catch(e) {}
     }
 
+    function saveCancelledTrip(tripId) {
+        // 乘客取消后，保存取消记录到本地
+        if (!activeTrip || activeTrip.id !== tripId) return;
+        var item = {
+            id: activeTrip.id,
+            passenger_name: activeTrip.passenger_name || '乘客',
+            driver_name: driverName,
+            pickup: activeTrip.pickup,
+            dropoff: activeTrip.dropoff,
+            price: activeTrip.price || 0,
+            distance: activeTrip.distance,
+            timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
+            status: 'cancelled',
+            ride_type: activeTrip.ride_type || 'sd_xuan'
+        };
+        var trips = [];
+        try { trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
+        var exists = trips.some(function(t) { return t.id === tripId; });
+        if (!exists) { trips.unshift(item); }
+        localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
+    }
+
     function showPaymentToast() {
         // 显示乘客付款通知
         var toast = document.createElement('div');
@@ -334,6 +366,19 @@
             toast.classList.add('opacity-0', 'transition-opacity', 'duration-500');
             setTimeout(function() { toast.remove(); }, 500);
         }, 2500);
+    }
+
+    function showCancelToast(who) {
+        // 显示对方取消通知
+        var toast = document.createElement('div');
+        toast.className = 'fixed top-4 right-4 bg-rose-500 text-white px-5 py-3 rounded-xl shadow-lg z-50 text-sm font-bold animate-bounce';
+        toast.innerHTML = '⚠️ ' + who + '已取消订单 · 订单已失效';
+        document.body.appendChild(toast);
+        setTimeout(function() {
+            toast.classList.remove('animate-bounce');
+            toast.classList.add('opacity-0', 'transition-opacity', 'duration-500');
+            setTimeout(function() { toast.remove(); }, 500);
+        }, 3000);
     }
 
     window.addEventListener('load', function() {
@@ -375,10 +420,11 @@
         initMap();
         initGPS();
         initLandmarkButtons();
+        syncEarnings();
+        // 默认在线，自动启动心跳和轮询
         startHeartbeat();
         startTripPolling();
         startDispatchPolling();
-        syncEarnings();
 
         // 跨标签页同步：监听调度广播
         window.addEventListener('storage', function(e) {
@@ -398,6 +444,12 @@
                         updateLocalTripPaidStatus(msg2.tripId);
                         syncEarnings();
                         showPaymentToast();
+                    }
+                    // 乘客取消了行程 → 立即重置订单
+                    if (msg2.action === 'trip_cancelled' && msg2.tripId === activeTripId) {
+                        showCancelToast('乘客');
+                        saveCancelledTrip(msg2.tripId);
+                        resetOrder();
                     }
                 } catch(er) {}
             }
@@ -607,18 +659,26 @@
         isOnline = !isOnline;
         const btn = document.getElementById('online-btn');
         const st = document.getElementById('driver-status-text');
+        const dot = document.querySelector('#driver-name').parentElement.parentElement.querySelector('.w-3.h-3');
         if (isOnline) {
-            btn.className = 'px-5 py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-sm transition shadow-sm hover:bg-emerald-600';
+            btn.className = 'px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-sm transition shadow-sm';
             btn.innerText = '在线';
             st.innerText = '在线听单中';
+            if (dot) { dot.className = 'w-3 h-3 rounded-full bg-emerald-500 animate-pulse'; }
             startHeartbeat();
             startTripPolling();
+            startDispatchPolling();
         } else {
             btn.className = 'px-5 py-2.5 bg-slate-200 text-slate-500 font-bold rounded-xl text-sm transition';
             btn.innerText = '离线';
             st.innerText = '已离线';
+            if (dot) { dot.className = 'w-3 h-3 rounded-full bg-slate-400'; }
             clearInterval(heartbeatTimer);
             clearInterval(tripPollTimer);
+            clearInterval(dispatchPollTimer);
+            clearInterval(activeTripPollTimer);
+            // 通知服务器：此司机已离线，系统不再派单，乘客也看不到
+            markOffline();
         }
     }
 
@@ -755,6 +815,19 @@
         }).catch(() => {});
     }
 
+    // 通知服务器司机已离线，确保不再接收派单且乘客看不到
+    function markOffline() {
+        fetch('/api/drivers/heartbeat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                driver_id: driverId, name: driverName, location: driverPos,
+                status: 'offline',
+                vehicle: '鲁A·新能源网约车', user_type: 'driver'
+            })
+        }).catch(function() {});
+    }
+
     function startHeartbeat() {
         clearInterval(heartbeatTimer);
         function beat() {
@@ -790,6 +863,39 @@
         }
         poll();
         tripPollTimer = setInterval(poll, 3000);
+    }
+
+    // ===== 活跃订单状态轮询（持续监听服务器端状态变更：对方取消/完成） =====
+    function startActiveTripStatusPolling() {
+        if (activeTripPollTimer) clearInterval(activeTripPollTimer);
+        function checkStatus() {
+            if (!activeTripId || !activeTrip) {
+                clearInterval(activeTripPollTimer);
+                activeTripPollTimer = null;
+                return;
+            }
+            fetch('/api/trips/' + activeTripId)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (!data.success || !data.trip) return;
+                    var serverTrip = data.trip;
+                    // 检测到对方取消 → 立即处理
+                    if (serverTrip.status === 'cancelled' && activeTrip && activeTrip.status !== 'cancelled') {
+                        showCancelToast('乘客');
+                        saveCancelledTrip(activeTripId);
+                        resetOrder();
+                        return;
+                    }
+                    // 检测到对方已付款完成 → 刷新收入
+                    if (serverTrip.status === 'completed' && serverTrip.paid && activeTrip && activeTrip.status === 'completed') {
+                        updateLocalTripPaidStatus(activeTripId);
+                        syncEarnings();
+                        showPaymentToast();
+                    }
+                }).catch(function() {});
+        }
+        checkStatus();
+        activeTripPollTimer = setInterval(checkStatus, 2000);  // 每2秒检查一次
     }
 
     // ===== 显示活跃订单 =====
@@ -831,6 +937,7 @@
         map.fitBounds([[driverPos.lat, driverPos.lng], [dLat, dLng]], { padding: [40, 40] });
 
         renderOrderActions();
+        startActiveTripStatusPolling();  // 持续监听对方取消
     }
 
     function renderOrderActions() {
@@ -919,6 +1026,14 @@
                     if (!pExists) { pTrips.unshift(item); }
                     localStorage.setItem('mamba_passenger_trips', JSON.stringify(pTrips));
                 }
+
+                // 跨标签页通知：行程已取消
+                localStorage.setItem('mamba_trip_sync', JSON.stringify({
+                    action: 'trip_cancelled',
+                    tripId: activeTripId,
+                    cancelled_by: 'driver',
+                    timestamp: Date.now()
+                }));
             }
         }).catch(() => {});
 
@@ -1095,6 +1210,7 @@
 
         activeTrip = null;
         activeTripId = null;
+        if (activeTripPollTimer) { clearInterval(activeTripPollTimer); activeTripPollTimer = null; }
         if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
         map.removeLayer(pickupMarker);
         map.removeLayer(dropoffMarker);

@@ -620,6 +620,13 @@
                         activeTrip.driver_vehicle = msg.driver_vehicle || activeTrip.driver_vehicle;
                         showTripStatus();
                     }
+                    if (msg.action === 'trip_cancelled' && msg.tripId === activeTripId) {
+                        // 司机取消了行程 → 立即显示取消
+                        showCancelToast('司机');
+                        activeTrip.status = 'cancelled';
+                        showTripStatus();
+                        setTimeout(function() { resetBooking(); }, 2000);
+                    }
                 } catch(er) {}
             }
         });
@@ -1228,6 +1235,18 @@
             });
     }
 
+    function showCancelToast(who) {
+        var toast = document.createElement('div');
+        toast.className = 'fixed top-4 right-4 bg-rose-500 text-white px-5 py-3 rounded-xl shadow-lg z-50 text-sm font-bold animate-bounce';
+        toast.innerHTML = '⚠️ ' + who + '已取消订单 · 订单已失效';
+        document.body.appendChild(toast);
+        setTimeout(function() {
+            toast.classList.remove('animate-bounce');
+            toast.classList.add('opacity-0', 'transition-opacity', 'duration-500');
+            setTimeout(function() { toast.remove(); }, 500);
+        }, 3000);
+    }
+
     function startTripPolling() {
         if (tripPollTimer) clearInterval(tripPollTimer);
         tripPollTimer = setInterval(function() {
@@ -1236,7 +1255,7 @@
                 clearInterval(tripPollTimer);
                 return;
             }
-            fetch('/api/trips/' + activeTripId)
+            fetch('/api/trips/' + activeTripId, { cache: 'no-store' })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (data.success && data.trip) {
@@ -1244,10 +1263,15 @@
                         activeTrip = data.trip;
                         if (activeTrip.status !== prevStatus) {
                             showTripStatus();
+                            if (activeTrip.status === 'cancelled') {
+                                // 被司机取消 → 弹窗 + 2秒后重置界面
+                                showCancelToast('司机');
+                                setTimeout(function() { resetBooking(); }, 2000);
+                            }
                         }
                     }
                 }).catch(function() {});
-        }, 3000);
+        }, 2000);
     }
 
     function cancelTrip() {
@@ -1282,6 +1306,14 @@
                     });
                     localStorage.setItem('mamba_passenger_trips', JSON.stringify(trips));
                 }
+
+                // 跨标签页通知：行程已取消
+                localStorage.setItem('mamba_trip_sync', JSON.stringify({
+                    action: 'trip_cancelled',
+                    tripId: activeTripId,
+                    cancelled_by: 'passenger',
+                    timestamp: Date.now()
+                }));
             }
         }).catch(function() {});
 
