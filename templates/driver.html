@@ -1056,11 +1056,23 @@
             paid: isDispatch ? true : false,  // 调度任务直接标记完成，无需付款
             ride_type: trip.ride_type || 'sd_xuan'
         };
-        // 写入司机行程记录
+        // 写入司机行程记录（保留已有的 paid:true 状态，防止乘客已付款后被覆盖）
         var trips = [];
         try { trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
-        var exists = trips.some(function(t) { return t.id === trip.id; });
-        if (!exists) { trips.unshift(item); }
+        var existingIdx = -1;
+        for (var i = 0; i < trips.length; i++) {
+            if (trips[i].id === trip.id) { existingIdx = i; break; }
+        }
+        if (existingIdx >= 0) {
+            // 已存在：更新 status 为 completed，但保留 paid 若已为 true（乘客可能已在另一标签页付款）
+            trips[existingIdx].status = 'completed';
+            // 仅在 paid 从未被设为 true 时才更新（防止覆盖乘客的付款状态）
+            if (!trips[existingIdx].paid) {
+                trips[existingIdx].paid = item.paid;
+            }
+        } else {
+            trips.unshift(item);
+        }
         localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
 
         // 也写入乘客行程（标记未付款，乘客确认支付后会更新为 paid:true）

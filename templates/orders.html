@@ -242,6 +242,10 @@
             return (b.timestamp || '').localeCompare(a.timestamp || '');
         });
 
+        // 构建服务端已有行程 ID 集合（用于判断 paid 状态是否可信）
+        var serverTripIds = new Set();
+        serverTrips.forEach(function(t) { serverTripIds.add(t.id); });
+
         // 普通用户：过滤掉已删除的行程（管理员/超级用户不受影响）
         if (currentUserRole !== 'admin' && currentUserRole !== 'super') {
             var deletedSet = {};
@@ -309,12 +313,18 @@
 
             // 状态标签
             const status = trip.status || 'completed';
+            // 检查服务端是否有此行程记录（服务端无记录 = 服务器可能重启过，paid 状态不可信）
+            var serverHasRecord = serverTripIds.has(trip.id);
             let statusBadge = '';
             if (status === 'completed') {
                 if (isDispatch) {
                     statusBadge = '<div class="text-[9px] text-indigo-500 font-bold bg-indigo-50 px-1.5 py-0.5 rounded mt-1">调度完成</div>';
-                } else if (trip.paid === false) {
+                } else if (trip.paid === false && serverHasRecord) {
+                    // 仅当服务端确实标记为未付款时才显示"待付款"
                     statusBadge = '<div class="text-[9px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded mt-1 flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-amber-500 animate-pulse"></span>待付款</div>';
+                } else if (trip.paid === false && !serverHasRecord) {
+                    // 服务器可能重启过，无法确认付款状态 → 显示"已完成"（避免误导）
+                    statusBadge = '<div class="text-[9px] text-emerald-500 font-bold bg-emerald-50 px-1.5 py-0.5 rounded mt-1">已完成</div>';
                 } else {
                     statusBadge = '<div class="text-[9px] text-emerald-500 font-bold bg-emerald-50 px-1.5 py-0.5 rounded mt-1">已完成</div>';
                 }
