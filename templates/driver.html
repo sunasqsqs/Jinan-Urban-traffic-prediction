@@ -263,6 +263,10 @@
         return 'mamba_completed_trips_' + driverId;
     }
 
+    function deletedStorageKey() {
+        return 'mamba_deleted_trip_ids_' + driverId;
+    }
+
     function dist(lng1, lat1, lng2, lat2) {
         const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
         const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
@@ -318,7 +322,14 @@
             });
         } catch(e) {}
 
-        // 3. 计算今日收入
+        // 3. 过滤已删除（隐藏）的行程
+        var deletedIds = [];
+        try { deletedIds = JSON.parse(localStorage.getItem(deletedStorageKey())) || []; } catch(e) {}
+        var deletedSet = {};
+        for (var di = 0; di < deletedIds.length; di++) { deletedSet[deletedIds[di]] = true; }
+        allTrips = allTrips.filter(function(t) { return !deletedSet[t.id]; });
+
+        // 4. 计算今日收入
         earningsToday = allTrips.reduce(function(s, t) {
             return s + parseFloat(t.price || 0);
         }, 0);
@@ -461,6 +472,10 @@
             }
             // 乘客付款或订单状态变化后，重新计算收入
             if (e.key === tripsStorageKey()) {
+                syncEarnings();
+            }
+            // 清空记录后，今日收入重新计算（过滤已删除行程）
+            if (e.key === deletedStorageKey()) {
                 syncEarnings();
             }
         });
