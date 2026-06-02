@@ -683,7 +683,12 @@
         var hidden = document.getElementById('pickup-hidden');
         var btn = document.getElementById('gps-pickup-btn');
 
-        // 按钮立即反馈：显示"定位中"
+        if (!navigator.geolocation) {
+            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 浏览器不支持GPS';
+            return;
+        }
+
+        // 按钮反馈：显示"定位中"
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="animate-spin inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full mr-1"></span> 定位中';
@@ -691,37 +696,10 @@
             btn.classList.add('bg-emerald-600');
         }
 
-        // ===== 安全上下文检查：浏览器 GPS API 要求 HTTPS 或 localhost =====
-        if (!window.isSecureContext) {
-            console.warn('[GPS] 非安全上下文：浏览器GPS需要HTTPS或localhost，当前为HTTP');
-            applyPickupFromCurrentPosition();
-            resetGpsButton(btn, '需要HTTPS');
-            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> ⚠️ GPS需HTTPS/localhost';
-            showGpsToast('⚠️ 浏览器GPS定位需要 HTTPS 或 localhost 环境。<br>当前为 HTTP 连接，GPS 不可用。<br><small>请在浏览器地址栏输入 <b>http://localhost:5000</b> 访问</small>', 'error');
-            return;
-        }
-
-        if (!navigator.geolocation) {
-            applyPickupFromCurrentPosition();
-            resetGpsButton(btn, '不支持');
-            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 浏览器不支持GPS';
-            showGpsToast('您的浏览器不支持GPS定位功能', 'error');
-            return;
-        }
-
-        // 检查权限状态（若浏览器支持 Permissions API）
-        if (navigator.permissions && navigator.permissions.query) {
-            navigator.permissions.query({name: 'geolocation'}).then(function(permStatus) {
-                if (permStatus.state === 'denied') {
-                    document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> ⚠️ 定位权限被拒绝';
-                    showGpsToast('⚠️ 定位权限已被浏览器拒绝。<br><small>请在浏览器地址栏左侧点击锁/信息图标 → 位置 → 允许</small>', 'error');
-                }
-            }).catch(function(){});
-        }
+        document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> 正在获取GPS...';
 
         navigator.geolocation.getCurrentPosition(
             function(pos) {
-                // GPS成功 → 更新位置
                 passengerPosition = { lng: pos.coords.longitude, lat: pos.coords.latitude };
                 gpsLocated = true;
                 savePassengerPosition();
@@ -729,60 +707,30 @@
                 document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> GPS 已定位 (±' + Math.round(pos.coords.accuracy || 10) + 'm)';
                 applyPickupFromCurrentPosition();
                 updateEstimate();
-                resetGpsButton(btn, 'success');
-                showGpsToast('✅ GPS定位成功！已更新上车点', 'success');
+
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 已定位';
+                    btn.classList.remove('bg-emerald-600');
+                    btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
+                    if (window.lucide) lucide.createIcons();
+                }
             },
             function(err) {
-                // GPS失败 → 使用已有位置，并给出具体原因
-                console.warn('[GPS] 定位失败: code=' + err.code + ' message=' + err.message);
-                var reason = '';
-                var indicatorHtml = '';
-                if (err.code === 1) {
-                    // PERMISSION_DENIED
-                    reason = '定位权限被拒绝，请在浏览器设置中允许本站获取位置信息';
-                    indicatorHtml = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> ⚠️ 定位权限被拒绝';
-                } else if (err.code === 2) {
-                    // POSITION_UNAVAILABLE
-                    reason = '无法获取位置信息（可能设备GPS未开启或信号弱）';
-                    indicatorHtml = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> GPS信号不可用';
-                } else if (err.code === 3) {
-                    // TIMEOUT
-                    reason = 'GPS定位超时，请检查设备定位服务是否开启';
-                    indicatorHtml = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> GPS定位超时';
-                } else {
-                    reason = '定位失败: ' + (err.message || '未知错误');
-                    indicatorHtml = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 定位失败，使用上次位置';
-                }
-                document.getElementById('gps-indicator').innerHTML = indicatorHtml;
+                document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 定位失败 · 使用默认位置';
                 applyPickupFromCurrentPosition();
                 updateEstimate();
-                resetGpsButton(btn, 'failed');
-                showGpsToast('⚠️ ' + reason + '<br><small>已使用上次保存位置作为上车点</small>', 'error');
+
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 重试定位';
+                    btn.classList.remove('bg-emerald-600');
+                    btn.classList.add('bg-amber-500', 'hover:bg-amber-600');
+                    if (window.lucide) lucide.createIcons();
+                }
             },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
         );
-    }
-
-    // GPS状态浮动提示条
-    function showGpsToast(msg, type) {
-        // 移除已有toast
-        var existing = document.getElementById('gps-toast');
-        if (existing) existing.remove();
-
-        var toast = document.createElement('div');
-        toast.id = 'gps-toast';
-        var bgColor = type === 'success' ? 'bg-emerald-500' : 'bg-rose-500';
-        toast.className = bgColor + ' text-white text-xs px-4 py-2.5 rounded-lg shadow-lg z-[9999]';
-        toast.style.cssText = 'position:fixed;top:80px;right:16px;max-width:320px;line-height:1.5;animation:slideInRight 0.3s ease;';
-        toast.innerHTML = msg;
-        document.body.appendChild(toast);
-
-        // 3秒后自动消失
-        setTimeout(function() {
-            toast.style.opacity = '0';
-            toast.style.transition = 'opacity 0.3s';
-            setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
-        }, 3500);
     }
 
     // 将当前 passengerPosition 应用到上车点输入框和地图
@@ -799,43 +747,6 @@
             map.setView([passengerPosition.lat, passengerPosition.lng], 15);
             updateUserOnMap();
         }
-    }
-
-    // 恢复按钮状态（支持状态反馈）
-    function resetGpsButton(btn, statusText) {
-        if (!btn) return;
-        btn.disabled = false;
-
-        if (statusText === 'success') {
-            // GPS成功 → 短暂显示绿色"已定位"
-            btn.innerHTML = '<i data-lucide="check-circle" class="w-3.5 h-3.5"></i> 已定位';
-            btn.classList.remove('bg-emerald-600');
-            btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
-            setTimeout(function() {
-                btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 当前位置';
-                btn.classList.remove('bg-emerald-600');
-                btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
-                if (window.lucide) lucide.createIcons();
-            }, 2000);
-        } else if (statusText === 'failed' || statusText === '不支持' || statusText === '需要HTTPS') {
-            // GPS失败 → 短暂显示红色提示，然后恢复
-            btn.innerHTML = '<i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i> ' + (statusText === '需要HTTPS' ? '需HTTPS' : '失败');
-            btn.classList.remove('bg-emerald-500', 'bg-emerald-600', 'hover:bg-emerald-600');
-            btn.classList.add('bg-rose-500', 'hover:bg-rose-600');
-            setTimeout(function() {
-                btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 当前位置';
-                btn.classList.remove('bg-rose-500', 'hover:bg-rose-600');
-                btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
-                if (window.lucide) lucide.createIcons();
-            }, 2500);
-        } else {
-            // 默认恢复
-            btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 当前位置';
-            btn.classList.remove('bg-emerald-600', 'bg-rose-500', 'hover:bg-rose-600');
-            btn.classList.add('bg-emerald-500', 'hover:bg-emerald-600');
-        }
-
-        if (window.lucide) lucide.createIcons();
     }
 
     // ===== 上车点：focus → 清空以便输入 =====
@@ -967,86 +878,67 @@
     }
 
     function initGPS() {
-        // ===== 安全上下文检查 =====
-        if (!window.isSecureContext) {
-            console.warn('[GPS] 非安全上下文：浏览器GPS需要HTTPS或localhost');
-            gpsLocated = false;
-            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> ⚠️ GPS需HTTPS/localhost';
+        // 如果已有保存的位置（从 localStorage 恢复或之前手动设置），不再自动定位
+        var hasSaved = false;
+        try {
+            var sp = JSON.parse(localStorage.getItem('mamba_passenger_position'));
+            if (sp && typeof sp.lng === 'number') hasSaved = true;
+        } catch(e) {}
+
+        if (hasSaved) {
+            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 已加载上次位置';
+            var btn = document.getElementById('gps-pickup-btn');
+            if (btn) {
+                btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 当前位置';
+                if (window.lucide) lucide.createIcons();
+            }
+            gpsLocated = true;
             updateUserOnMap();
             applyPickupFromCurrentPosition();
-            var btn = document.getElementById('gps-pickup-btn');
-            if (btn) resetGpsButton(btn, '需要HTTPS');
             return;
         }
+
+        // 首次使用：自动获取设备 GPS 真实位置
+        document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> 正在获取设备位置...';
 
         if (!navigator.geolocation) {
-            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 无法获取GPS';
-            gpsLocated = false;
-            updateUserOnMap();
+            document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 浏览器不支持GPS';
             return;
         }
 
-        // 按钮立即反馈
-        var btn = document.getElementById('gps-pickup-btn');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<span class="animate-spin inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full mr-1"></span> 定位中';
-        }
-
-        // 检查权限状态
-        if (navigator.permissions && navigator.permissions.query) {
-            navigator.permissions.query({name: 'geolocation'}).then(function(permStatus) {
-                if (permStatus.state === 'denied') {
-                    document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> ⚠️ 定位权限被拒绝';
-                }
-            }).catch(function(){});
-        }
-
-        // 始终尝试获取真实GPS位置
         navigator.geolocation.getCurrentPosition(
             function(pos) {
-                // GPS成功 → 更新位置
                 passengerPosition = { lng: pos.coords.longitude, lat: pos.coords.latitude };
                 gpsLocated = true;
                 savePassengerPosition();
                 updateUserOnMap();
+                map.setView([passengerPosition.lat, passengerPosition.lng], 15);
                 document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> GPS 已定位 (±' + Math.round(pos.coords.accuracy || 10) + 'm)';
                 applyPickupFromCurrentPosition();
                 updateEstimate();
-                if (btn) resetGpsButton(btn, 'success');
+
+                var btn = document.getElementById('gps-pickup-btn');
+                if (btn) {
+                    btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 已定位';
+                    btn.classList.remove('bg-emerald-500', 'hover:bg-emerald-600');
+                    btn.classList.add('bg-emerald-600');
+                    if (window.lucide) lucide.createIcons();
+                }
             },
             function(err) {
-                // GPS失败 → 尝试使用上次保存的位置
-                console.warn('[GPS] 初始化定位失败: code=' + err.code + ' message=' + err.message);
-                var hasSaved = false;
-                try {
-                    var sp = JSON.parse(localStorage.getItem('mamba_passenger_position'));
-                    if (sp && typeof sp.lng === 'number') {
-                        passengerPosition = { lng: sp.lng, lat: sp.lat };
-                        hasSaved = true;
-                    }
-                } catch(e) {}
-
-                var indicatorHtml, statusForBtn;
-                if (err.code === 1) {
-                    indicatorHtml = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> ⚠️ 定位权限被拒绝';
-                    statusForBtn = 'failed';
-                } else if (hasSaved) {
-                    gpsLocated = true;
-                    indicatorHtml = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 使用上次保存位置';
-                    statusForBtn = null;
-                } else {
-                    gpsLocated = false;
-                    indicatorHtml = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 使用默认位置 (济南市中心)';
-                    statusForBtn = 'failed';
-                }
-
-                document.getElementById('gps-indicator').innerHTML = indicatorHtml;
-                updateUserOnMap();
+                document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 定位失败 · 点击📍重试';
                 applyPickupFromCurrentPosition();
-                if (btn) resetGpsButton(btn, statusForBtn);
+                updateEstimate();
+
+                var btn = document.getElementById('gps-pickup-btn');
+                if (btn) {
+                    btn.innerHTML = '<i data-lucide="crosshair" class="w-3.5 h-3.5"></i> 重试定位';
+                    btn.classList.remove('bg-emerald-500', 'hover:bg-emerald-600');
+                    btn.classList.add('bg-amber-500', 'hover:bg-amber-600');
+                    if (window.lucide) lucide.createIcons();
+                }
             },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
         );
     }
 
@@ -1080,7 +972,8 @@
             if (activeTrip) return;
             passengerPosition = { lng: e.latlng.lng, lat: e.latlng.lat };
             updateUserOnMap();
-            useCurrentLocation();
+            applyPickupFromCurrentPosition();
+            updateEstimate();
             document.getElementById('gps-indicator').innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span> 手动设定上车点';
             savePassengerPosition();
         });
@@ -1227,6 +1120,18 @@
         var dropoffName = (activeTrip.dropoff && activeTrip.dropoff.name) || '目的地';
         var price = parseFloat(activeTrip.price || 0).toFixed(2);
         var distance = activeTrip.distance ? parseFloat(activeTrip.distance).toFixed(1) + ' km' : '--';
+
+        // 到达目的地后，更新地图显示目的地位置（与司机端一致）
+        var dLng = activeTrip.dropoff_lng || (activeTrip.dropoff && activeTrip.dropoff.lng);
+        var dLat = activeTrip.dropoff_lat || (activeTrip.dropoff && activeTrip.dropoff.lat);
+        if (dLng && dLat) {
+            passengerPosition = { lng: dLng, lat: dLat };
+            updateUserOnMap();
+            savePassengerPosition();
+            if (map) {
+                map.setView([dLat, dLng], 14);
+            }
+        }
 
         document.getElementById('checkout-route').innerText = pickupName + ' → ' + dropoffName;
         document.getElementById('checkout-driver').innerText = activeTrip.driver_name || '司机';
@@ -1443,7 +1348,7 @@
 
     // GPS pulse animation
     const style = document.createElement('style');
-    style.textContent = '@keyframes pulse-gps { to { box-shadow: 0 0 0 14px rgba(6,182,212,0); } } @keyframes slideInRight { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }';
+    style.textContent = '@keyframes pulse-gps { to { box-shadow: 0 0 0 14px rgba(6,182,212,0); } }';
     document.head.appendChild(style);
     lucide.createIcons();
 </script>
