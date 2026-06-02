@@ -691,6 +691,11 @@ def get_dispatch_orders():
     """获取所有广播中的调度订单（司机端轮询，过滤已忽略的）"""
     driver_id = request.args.get('driver_id', '')
     with taxi_state_lock:
+        # 离线司机不接收调度订单
+        if driver_id and driver_id in TAXI_DRIVERS:
+            driver = TAXI_DRIVERS[driver_id]
+            if driver.get("status") == "offline":
+                return jsonify({"success": True, "orders": []})
         orders = [
             {**o, "accepted_by": o["accepted_by"][:]}
             for o in DISPATCH_ORDERS.values()
@@ -723,6 +728,11 @@ def accept_dispatch_order(order_id):
     driver_loc = data.get("driver_location")
 
     with taxi_state_lock:
+        # 离线司机不能接受调度订单
+        if driver_id and driver_id in TAXI_DRIVERS:
+            if TAXI_DRIVERS[driver_id].get("status") == "offline":
+                return jsonify({"success": False, "message": "您已离线，无法接受调度订单"}), 400
+
         order = DISPATCH_ORDERS.get(order_id)
         if not order:
             return jsonify({"success": False, "message": "订单不存在或已过期"}), 404

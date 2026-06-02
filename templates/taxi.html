@@ -590,10 +590,15 @@
     // 读取 orders 履约库，实时校准 HUD 面板数值，完美统一数据
     function syncHudStatsWithOrders() {
         let localTrips = [];
-        try {
-            localTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
-        } catch(e){
-            console.error("同步 HUD 时读取数据失败:", e);
+        // 扫描所有司机的 per-user key，聚合全部行程数据
+        for (var ki = 0; ki < localStorage.length; ki++) {
+            var lkey = localStorage.key(ki);
+            if (lkey && lkey.indexOf('mamba_completed_trips_') === 0) {
+                try {
+                    var lt = JSON.parse(localStorage.getItem(lkey)) || [];
+                    localTrips = localTrips.concat(lt);
+                } catch(e) {}
+            }
         }
 
         // 如未产生新单，同 orders.html 默认展现静态记录
@@ -1810,11 +1815,11 @@
 
         let localOrders = [];
         try {
-            localOrders = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
+            localOrders = JSON.parse(localStorage.getItem('mamba_completed_trips_dispatch')) || [];
         } catch(e){}
 
         localOrders.unshift(completedTripItem);
-        localStorage.setItem('mamba_completed_trips', JSON.stringify(localOrders));
+        localStorage.setItem('mamba_completed_trips_dispatch', JSON.stringify(localOrders));
 
         // 履约结束后立即重新校对顶部 HUD，保持高度一致
         syncHudStatsWithOrders();

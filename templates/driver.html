@@ -258,6 +258,11 @@
     let earningsToday = 0;
     let onlineSince = Date.now();
 
+    // 按司机ID隔离存储，每个司机只能看到自己的行程记录
+    function tripsStorageKey() {
+        return 'mamba_completed_trips_' + driverId;
+    }
+
     function dist(lng1, lat1, lng2, lat2) {
         const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
         const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
@@ -302,7 +307,7 @@
 
         // 2. 从 localStorage 合并（去重），仅保留今天的
         try {
-            const localTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
+            const localTrips = JSON.parse(localStorage.getItem(tripsStorageKey())) || [];
             localTrips.forEach(function(t) {
                 if (!seen[t.id]) {
                     // localStorage timestamp 格式如 "2026-06-02 14:30:00"，过滤非当天
@@ -323,13 +328,13 @@
     function updateLocalTripPaidStatus(tripId) {
         // 乘客付款后，同步更新司机本地记录为已付款
         try {
-            var trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
+            var trips = JSON.parse(localStorage.getItem(tripsStorageKey())) || [];
             var updated = false;
             trips.forEach(function(t) {
                 if (t.id === tripId) { t.paid = true; updated = true; }
             });
             if (updated) {
-                localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
+                localStorage.setItem(tripsStorageKey(), JSON.stringify(trips));
             }
         } catch(e) {}
     }
@@ -350,10 +355,10 @@
             ride_type: activeTrip.ride_type || 'sd_xuan'
         };
         var trips = [];
-        try { trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
+        try { trips = JSON.parse(localStorage.getItem(tripsStorageKey())) || []; } catch(e) {}
         var exists = trips.some(function(t) { return t.id === tripId; });
         if (!exists) { trips.unshift(item); }
-        localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
+        localStorage.setItem(tripsStorageKey(), JSON.stringify(trips));
     }
 
     function showPaymentToast() {
@@ -455,7 +460,7 @@
                 } catch(er) {}
             }
             // 乘客付款或订单状态变化后，重新计算收入
-            if (e.key === 'mamba_completed_trips') {
+            if (e.key === tripsStorageKey()) {
                 syncEarnings();
             }
         });
@@ -1031,19 +1036,10 @@
                     ride_type: activeTrip.ride_type || 'sd_xuan'
                 };
                 var trips = [];
-                try { trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
+                try { trips = JSON.parse(localStorage.getItem(tripsStorageKey())) || []; } catch(e) {}
                 var exists = trips.some(function(t) { return t.id === activeTrip.id; });
                 if (!exists) { trips.unshift(item); }
-                localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
-
-                // 也写入乘客存储（非调度订单）
-                if (!isDispatch) {
-                    var pTrips = [];
-                    try { pTrips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
-                    var pExists = pTrips.some(function(t) { return t.id === activeTrip.id; });
-                    if (!pExists) { pTrips.unshift(item); }
-                    localStorage.setItem('mamba_passenger_trips', JSON.stringify(pTrips));
-                }
+                localStorage.setItem(tripsStorageKey(), JSON.stringify(trips));
 
                 // 跨标签页通知：行程已取消
                 localStorage.setItem('mamba_trip_sync', JSON.stringify({
@@ -1204,7 +1200,7 @@
         };
         // 写入司机行程记录（保留已有的 paid:true 状态，防止乘客已付款后被覆盖）
         var trips = [];
-        try { trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
+        try { trips = JSON.parse(localStorage.getItem(tripsStorageKey())) || []; } catch(e) {}
         var existingIdx = -1;
         for (var i = 0; i < trips.length; i++) {
             if (trips[i].id === trip.id) { existingIdx = i; break; }
@@ -1219,16 +1215,7 @@
         } else {
             trips.unshift(item);
         }
-        localStorage.setItem('mamba_completed_trips', JSON.stringify(trips));
-
-        // 也写入乘客行程（标记未付款，乘客确认支付后会更新为 paid:true）
-        if (!isDispatch) {
-            var pTrips = [];
-            try { pTrips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
-            var pExists = pTrips.some(function(t) { return t.id === trip.id; });
-            if (!pExists) { pTrips.unshift(item); }
-            localStorage.setItem('mamba_passenger_trips', JSON.stringify(pTrips));
-        }
+        localStorage.setItem(tripsStorageKey(), JSON.stringify(trips));
     }
 
     function resetOrder() {

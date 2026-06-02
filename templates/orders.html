@@ -48,6 +48,7 @@
 <script>
     let currentUserType = 'passenger';
     let currentUserRole = 'normal';
+    let currentUserId = '';
 
     document.addEventListener("DOMContentLoaded", function() {
         // 读取用户身份
@@ -57,6 +58,7 @@
                 const user = JSON.parse(tokenStr);
                 currentUserType = user.user_type || 'passenger';
                 currentUserRole = user.role || 'normal';
+                currentUserId = user.username || '';
             }
         } catch(e) {}
 
@@ -72,6 +74,45 @@
 
         renderTrips();
     });
+
+    // === 根据用户身份生成 localStorage key（用户隔离） ===
+    function tripsStorageKey() {
+        if (currentUserType === 'driver') {
+            var did = currentUserId;
+            if (did && did.indexOf('driver_') !== 0) did = 'driver_' + did;
+            return 'mamba_completed_trips_' + did;
+        } else {
+            return 'mamba_passenger_trips_' + currentUserId;
+        }
+    }
+
+    function driverStorageKey() {
+        var did = currentUserId;
+        if (did && did.indexOf('driver_') !== 0) did = 'driver_' + did;
+        return 'mamba_completed_trips_' + did;
+    }
+
+    function passengerStorageKey() {
+        return 'mamba_passenger_trips_' + currentUserId;
+    }
+
+    function deletedStorageKey() {
+        return 'mamba_deleted_trip_ids_' + currentUserId;
+    }
+
+    function getAllLocalTrips() {
+        var allTrips = [];
+        for (var ki = 0; ki < localStorage.length; ki++) {
+            var lkey = localStorage.key(ki);
+            if (lkey && (lkey.indexOf('mamba_passenger_trips_') === 0 || lkey.indexOf('mamba_completed_trips_') === 0)) {
+                try {
+                    var lt = JSON.parse(localStorage.getItem(lkey)) || [];
+                    allTrips = allTrips.concat(lt);
+                } catch(e) {}
+            }
+        }
+        return allTrips;
+    }
 
     function renderTrips() {
         // 先异步拉取服务端数据，再渲染
@@ -108,16 +149,8 @@
                 }
             } catch(e) { console.error('获取管理员全部行程失败:', e); }
 
-            // 合并本地存储数据
-            let localTrips = [];
-            try {
-                const pt = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || [];
-                localTrips = localTrips.concat(pt);
-            } catch(e) {}
-            try {
-                const dt = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
-                localTrips = localTrips.concat(dt);
-            } catch(e) {}
+            // 合并本地存储数据（扫描所有用户特定key）
+            let localTrips = getAllLocalTrips();
 
             // 去重合并
             const seen = {};
@@ -162,7 +195,7 @@
             // 司机：合并 localStorage + 服务端数据（服务端 paid 状态优先）
             let localTrips = [];
             try {
-                localTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || [];
+                localTrips = JSON.parse(localStorage.getItem(tripsStorageKey())) || [];
             } catch(e) {}
             // 去重
             const seen = {};
@@ -220,7 +253,7 @@
             // 合并本地存储和服务端
             var localPaxTrips = [];
             try {
-                localPaxTrips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || [];
+                localPaxTrips = JSON.parse(localStorage.getItem(tripsStorageKey())) || [];
             } catch(e) {}
             const seenPax = {};
             serverTrips.forEach(function(t) { seenPax[t.id] = true; trips.push(t); });
@@ -246,12 +279,15 @@
         var serverTripIds = new Set();
         serverTrips.forEach(function(t) { serverTripIds.add(t.id); });
 
-        // 普通用户：过滤掉已删除的行程（管理员/超级用户不受影响）
-        if (currentUserRole !== 'admin' && currentUserRole !== 'super') {
-            var deletedSet = {};
-            var delIds = getDeletedTripIds();
-            for (var di = 0; di < delIds.length; di++) { deletedSet[delIds[di]] = true; }
-            trips = trips.filter(function(t) { return !deletedSet[t.id]; });
+        // 所有用户：过滤掉已删除（隐藏）的行程
+        var deletedSet = {};
+        var delIds = getDeletedTripIds();
+        for (var di = 0; di < delIds.length; di++) { deletedSet[delIds[di]] = true; }
+        trips = trips.filter(function(t) { return !deletedSet[t.id]; });
+
+        // 管理员/高级用户：只看已完成的订单
+        if (currentUserRole === 'admin' || currentUserRole === 'super') {
+            trips = trips.filter(function(t) { return t.status === 'completed'; });
         }
 
         // 统计
@@ -364,89 +400,43 @@
     }
 
     function clearHistory() {
-        if (!confirm('确定要清空您的所有行程记录吗？此操作不可恢复。')) return;
-
-        // 获取当前用户身份
-        var tokenStr = localStorage.getItem('mamba_auth_token') || sessionStorage.getItem('mamba_auth_token');
-        var userId = '';
-        var driverName = '';
-        var driverNameAlt = '';
-        if (tokenStr) {
-            try {
-                var u = JSON.parse(tokenStr);
-                userId = u.username || '';
-                if (currentUserType === 'driver') {
-                    driverName = userId.indexOf('driver_') === 0 ? userId : 'driver_' + userId;
-                    driverNameAlt = userId.indexOf('driver_') === 0 ? userId.replace('driver_', '') : userId;
-                }
-            } catch(e) {}
-        }
+        if (!confirm('确定要隐藏您的所有行程记录吗？记录仍保留在系统中，只是不再显示。')) return;
 
         var deletedIds = [];
 
         if (currentUserType === 'driver') {
-            // 只删除该司机自己的记录
-            var trips = [];
-            try { trips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
-            var keep = [];
-            for (var i = 0; i < trips.length; i++) {
-                var t = trips[i];
-                if (t.driver_name === driverName || t.driver_name === driverNameAlt || (t.driver_id && t.driver_id === userId)) {
-                    deletedIds.push(t.id);
-                } else {
-                    keep.push(t);
+            // 收集该司机所有记录的 ID（不删除 localStorage 数据）
+            try {
+                var trips = JSON.parse(localStorage.getItem(tripsStorageKey())) || [];
+                for (var i = 0; i < trips.length; i++) {
+                    deletedIds.push(trips[i].id);
                 }
-            }
-            localStorage.setItem('mamba_completed_trips', JSON.stringify(keep));
+            } catch(e) {}
         } else if (currentUserRole === 'admin' || currentUserRole === 'super') {
-            // 管理员/超级用户：只清除自己作为司机或乘客的本地记录，不影响其他用户
-            var adminDriver = userId.indexOf('driver_') === 0 ? userId : 'driver_' + userId;
-            var adminDriverAlt = userId.indexOf('driver_') === 0 ? userId.replace('driver_', '') : userId;
-
-            // 清除作为司机的记录
-            var dTrips = [];
-            try { dTrips = JSON.parse(localStorage.getItem('mamba_completed_trips')) || []; } catch(e) {}
-            var dKeep = [];
-            for (var j = 0; j < dTrips.length; j++) {
-                var dt = dTrips[j];
-                if (dt.driver_name === adminDriver || dt.driver_name === adminDriverAlt) {
-                    deletedIds.push(dt.id);
-                } else {
-                    dKeep.push(dt);
+            // 管理员/超级用户：收集自己作为司机或乘客的本地记录 ID
+            try {
+                var dTrips = JSON.parse(localStorage.getItem(driverStorageKey())) || [];
+                for (var j = 0; j < dTrips.length; j++) {
+                    deletedIds.push(dTrips[j].id);
                 }
-            }
-            localStorage.setItem('mamba_completed_trips', JSON.stringify(dKeep));
-
-            // 清除作为乘客的记录
-            var pTrips = [];
-            try { pTrips = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
-            var pKeep = [];
-            for (var k = 0; k < pTrips.length; k++) {
-                var pt = pTrips[k];
-                if (pt.passenger_name === userId || (pt.passenger_id && pt.passenger_id === userId)) {
-                    deletedIds.push(pt.id);
-                } else {
-                    pKeep.push(pt);
+            } catch(e) {}
+            try {
+                var pTrips = JSON.parse(localStorage.getItem(passengerStorageKey())) || [];
+                for (var k = 0; k < pTrips.length; k++) {
+                    deletedIds.push(pTrips[k].id);
                 }
-            }
-            localStorage.setItem('mamba_passenger_trips', JSON.stringify(pKeep));
+            } catch(e) {}
         } else {
-            // 乘客：只删除该乘客自己的记录
-            var pTrips2 = [];
-            try { pTrips2 = JSON.parse(localStorage.getItem('mamba_passenger_trips')) || []; } catch(e) {}
-            var pKeep2 = [];
-            for (var m = 0; m < pTrips2.length; m++) {
-                var pt2 = pTrips2[m];
-                if (pt2.passenger_name === userId || (pt2.passenger_id && pt2.passenger_id === userId)) {
-                    deletedIds.push(pt2.id);
-                } else {
-                    pKeep2.push(pt2);
+            // 乘客：收集该乘客所有记录的 ID
+            try {
+                var pTrips2 = JSON.parse(localStorage.getItem(tripsStorageKey())) || [];
+                for (var m = 0; m < pTrips2.length; m++) {
+                    deletedIds.push(pTrips2[m].id);
                 }
-            }
-            localStorage.setItem('mamba_passenger_trips', JSON.stringify(pKeep2));
+            } catch(e) {}
         }
 
-        // 标记已删除的 ID，用于过滤服务端返回的数据
+        // 标记已删除的 ID，用于过滤（数据仍在 localStorage 中）
         markTripsDeleted(deletedIds);
 
         renderTrips();
@@ -454,7 +444,7 @@
 
     // 获取已删除的行程 ID 列表
     function getDeletedTripIds() {
-        try { return JSON.parse(localStorage.getItem('mamba_deleted_trip_ids')) || []; } catch(e) { return []; }
+        try { return JSON.parse(localStorage.getItem(deletedStorageKey())) || []; } catch(e) { return []; }
     }
 
     // 将行程 ID 标记为已删除
@@ -467,7 +457,7 @@
         for (var i = 0; i < combined.length; i++) {
             if (!seen[combined[i]]) { seen[combined[i]] = true; unique.push(combined[i]); }
         }
-        localStorage.setItem('mamba_deleted_trip_ids', JSON.stringify(unique));
+        localStorage.setItem(deletedStorageKey(), JSON.stringify(unique));
     }
 
     // 跨标签页同步：乘客付款后本页面即时刷新
@@ -480,8 +470,8 @@
                 }
             } catch(er) {}
         }
-        // 追踪 mamba_completed_trips 的变更
-        if (e.key === 'mamba_completed_trips') {
+        // 追踪用户特定存储的变更
+        if (e.key === tripsStorageKey()) {
             renderTrips();
         }
     });
