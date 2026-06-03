@@ -945,29 +945,36 @@
 
         const pLng = trip.pickup_lng || (trip.pickup && trip.pickup.lng);
         const pLat = trip.pickup_lat || (trip.pickup && trip.pickup.lat);
-        pickupMarker.setLatLng([pLat, pLng]).addTo(map);
 
         const dLng = trip.dropoff_lng || (trip.dropoff && trip.dropoff.lng);
         const dLat = trip.dropoff_lat || (trip.dropoff && trip.dropoff.lat);
-        dropoffMarker.setLatLng([dLat, dLng]).addTo(map);
 
         if (routeLine) map.removeLayer(routeLine);
         if (destRouteLine) map.removeLayer(destRouteLine);
-        // 虚线：司机当前位置 → 乘客上车点
-        routeLine = L.polyline([[driverPos.lat, driverPos.lng], [pLat, pLng]], {
-            color: '#6366f1', weight: 4, dashArray: '8, 8', opacity: 0.8
-        }).addTo(map);
-        // 实线：乘客上车点 → 目的地
-        destRouteLine = L.polyline([[pLat, pLng], [dLat, dLng]], {
-            color: '#10b981', weight: 4, opacity: 0.7
-        }).addTo(map);
 
-        // 视图包含司机、乘客(上车点)、目的地三点
-        var bounds = L.latLngBounds(
-            [driverPos.lat, driverPos.lng],
-            [dLat, dLng]
-        );
-        bounds.extend([pLat, pLng]);
+        if (isDispatch) {
+            // 调度单：不显示乘客图标，只显示目的地标记，路线从司机直达目的地
+            map.removeLayer(pickupMarker);
+            dropoffMarker.setLatLng([dLat, dLng]).addTo(map);
+            destRouteLine = L.polyline([[driverPos.lat, driverPos.lng], [dLat, dLng]], {
+                color: '#10b981', weight: 4, opacity: 0.7
+            }).addTo(map);
+            var bounds = L.latLngBounds([driverPos.lat, driverPos.lng], [dLat, dLng]);
+        } else {
+            pickupMarker.setLatLng([pLat, pLng]).addTo(map);
+            dropoffMarker.setLatLng([dLat, dLng]).addTo(map);
+            // 虚线：司机当前位置 → 乘客上车点
+            routeLine = L.polyline([[driverPos.lat, driverPos.lng], [pLat, pLng]], {
+                color: '#6366f1', weight: 4, dashArray: '8, 8', opacity: 0.8
+            }).addTo(map);
+            // 实线：乘客上车点 → 目的地
+            destRouteLine = L.polyline([[pLat, pLng], [dLat, dLng]], {
+                color: '#10b981', weight: 4, opacity: 0.7
+            }).addTo(map);
+            // 视图包含司机、乘客(上车点)、目的地三点
+            var bounds = L.latLngBounds([driverPos.lat, driverPos.lng], [dLat, dLng]);
+            bounds.extend([pLat, pLng]);
+        }
         map.fitBounds(bounds, { padding: [40, 40] });
 
         renderOrderActions();

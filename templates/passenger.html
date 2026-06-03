@@ -271,6 +271,7 @@
     let routeLine = null;      // 司机 → 上车点（虚线）
     let destRouteLine = null;  // 上车点 → 目的地（实线）
     let tripPollTimer = null;
+    let nearbyPollTimer = null;
     let gpsWatchId = null;
     let gpsLocated = false;
 
@@ -591,7 +592,7 @@
             initMap();
             initGPS();
             pollNearbyDrivers();
-            setInterval(pollNearbyDrivers, 5000);
+            nearbyPollTimer = setInterval(pollNearbyDrivers, 5000);
             return;
         }
 
@@ -612,7 +613,7 @@
             initMap();
             initGPS();
             pollNearbyDrivers();
-            setInterval(pollNearbyDrivers, 5000);
+            nearbyPollTimer = setInterval(pollNearbyDrivers, 5000);
             return;
         }
 
@@ -620,7 +621,7 @@
         initMap();
         initGPS();
         pollNearbyDrivers();
-        setInterval(pollNearbyDrivers, 5000);
+        nearbyPollTimer = setInterval(pollNearbyDrivers, 5000);
 
         // 跨标签页同步：监听司机端状态变更，立即刷新行程UI
         window.addEventListener('storage', function(e) {
@@ -1191,6 +1192,10 @@
         if (assignedDriverMarker) { map.removeLayer(assignedDriverMarker); assignedDriverMarker = null; }
         if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
         if (destRouteLine) { map.removeLayer(destRouteLine); destRouteLine = null; }
+        // 清除所有附近司机图标，停止轮询，只显示乘客自己
+        driverMarkers.forEach(function(m) { map.removeLayer(m); });
+        driverMarkers = [];
+        if (nearbyPollTimer) { clearInterval(nearbyPollTimer); nearbyPollTimer = null; }
         document.getElementById('booking-panel').classList.add('hidden');
         document.getElementById('trip-status-card').classList.add('hidden');
         document.getElementById('checkout-card').classList.remove('hidden');
@@ -1400,6 +1405,11 @@
         if (pickupInput) { pickupInput.value = locName; pickupInput.dataset.lastValid = locName; }
         if (pickupHidden) pickupHidden.value = 'current';
         selectedPickup = { name: locName, lng: passengerPosition.lng, lat: passengerPosition.lat };
+        // 重新开始轮询附近司机
+        if (!nearbyPollTimer) {
+            pollNearbyDrivers();
+            nearbyPollTimer = setInterval(pollNearbyDrivers, 5000);
+        }
         lucide.createIcons();
     }
 

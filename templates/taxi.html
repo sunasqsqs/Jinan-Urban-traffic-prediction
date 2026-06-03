@@ -767,6 +767,9 @@
         pickupMarker.setLatLng([driverPosition.lat, driverPosition.lng]).addTo(map);
         dropoffMarker.setLatLng([activeAlertData.lat, activeAlertData.lon]).addTo(map);
 
+        // 调度单：移除上车点标记，司机图标已代表当前位置
+        map.removeLayer(pickupMarker);
+
         // 为司机规划前往该补仓网格中心点的导航路径
         navigateRouteToCoord(activeAlertData.lon, activeAlertData.lat, `紧急热区 [${activeAlertData.grid_name}]`);
         syncDriverTaskUI();
