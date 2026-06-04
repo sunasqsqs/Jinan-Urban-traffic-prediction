@@ -1000,10 +1000,6 @@
                 actions.innerHTML = '<div class="text-xs text-slate-500 mb-2">🚗 正在前往 ' + (activeTrip.dropoff && activeTrip.dropoff.name || '目的地') + '</div>';
                 actions.innerHTML += '<button onclick="updateStatus(\'completed\')" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl text-sm transition shadow-sm">到达目的地 · 完成任务</button>';
             }
-            // 调度任务可以取消
-            if (s === 'accepted' || s === 'driving') {
-                actions.innerHTML += '<button onclick="driverCancelTrip()" class="w-full mt-2 py-2 bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 font-bold rounded-lg text-xs transition">取消调度任务</button>';
-            }
             return;
         }
 
