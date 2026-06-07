@@ -417,6 +417,9 @@
             `;
             container.appendChild(card);
         });
+
+        // 如果列表中有待付款订单，启动服务端轮询
+        startPaymentRefreshPolling();
     }
 
     function clearHistory() {
@@ -495,6 +498,69 @@
             renderTrips();
         }
     });
+
+    // 定时轮询服务端：检测待付款订单是否已被乘客支付（无需刷新页面）
+    var paymentRefreshTimer = null;
+    function startPaymentRefreshPolling() {
+        if (paymentRefreshTimer) return;
+        paymentRefreshTimer = setInterval(function() {
+            // 检查当前页面是否有待付款订单
+            var hasUnpaid = false;
+            var unpaidTripIds = [];
+            // 扫描当前 DOM 中的行程卡片，找出"待付款"状态
+            var tripCards = document.querySelectorAll('#trips-list > div');
+            tripCards.forEach(function(card) {
+                var badge = card.querySelector('.text-amber-600');
+                if (badge && badge.textContent.indexOf('待付款') >= 0) {
+                    hasUnpaid = true;
+                    // 从卡片数据获取 tripId
+                    var onclick = badge.getAttribute('onclick') || '';
+                    var match = onclick.match(/openPaymentModal\('([^']+)'/);
+                    if (match) unpaidTripIds.push(match[1]);
+                }
+            });
+            if (!hasUnpaid) {
+                clearInterval(paymentRefreshTimer);
+                paymentRefreshTimer = null;
+                return;
+            }
+            // 轮询每个待付款行程的服务端状态
+            unpaidTripIds.forEach(function(tripId) {
+                fetch('/api/trips/' + tripId)
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.success && data.trip && data.trip.paid) {
+                            // 服务端确认已付款，更新本地和刷新列表
+                            updateAllLocalPaidStatus(tripId);
+                            renderTrips();
+                        }
+                    }).catch(function() {});
+            });
+        }, 3000);
+    }
+
+    function updateAllLocalPaidStatus(tripId) {
+        // 更新所有 localStorage 中该行程的 paid 状态
+        for (var ki = 0; ki < localStorage.length; ki++) {
+            var lkey = localStorage.key(ki);
+            if (lkey && (lkey.indexOf('mamba_passenger_trips_') === 0 || lkey.indexOf('mamba_completed_trips_') === 0)) {
+                try {
+                    var trips = JSON.parse(localStorage.getItem(lkey)) || [];
+                    var updated = false;
+                    for (var i = 0; i < trips.length; i++) {
+                        if (trips[i].id === tripId) { trips[i].paid = true; updated = true; }
+                    }
+                    if (updated) localStorage.setItem(lkey, JSON.stringify(trips));
+                } catch(e) {}
+            }
+        }
+        // 通知其他标签页
+        localStorage.setItem('mamba_trip_sync', JSON.stringify({
+            action: 'payment_confirmed',
+            tripId: tripId,
+            timestamp: Date.now()
+        }));
+    }
 
     // ===== 付款弹窗 =====
     var pendingPaymentTripId = null;

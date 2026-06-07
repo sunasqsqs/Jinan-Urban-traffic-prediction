@@ -255,6 +255,8 @@
     let heartbeatTimer = null;
     let tripPollTimer = null;
     let activeTripPollTimer = null;  // 活跃订单状态轮询（检测对方取消/完成）
+    let pendingPaymentTripIds = [];  // 已完成但等待乘客付款的行程ID
+    let paymentPollTimer = null;     // 轮询乘客付款状态
     let earningsToday = 0;
     let onlineSince = Date.now();
 
@@ -1235,6 +1237,58 @@
             trips.unshift(item);
         }
         localStorage.setItem(tripsStorageKey(), JSON.stringify(trips));
+
+        // 如果还没有付款，将该行程加入待付款轮询队列
+        if (!item.paid && !isDispatch) {
+            if (pendingPaymentTripIds.indexOf(trip.id) === -1) {
+                pendingPaymentTripIds.push(trip.id);
+            }
+            startPaymentPolling();
+        }
+    }
+
+    function startPaymentPolling() {
+        if (paymentPollTimer) return;  // 已在轮询
+        pollPaymentStatus();
+        paymentPollTimer = setInterval(pollPaymentStatus, 3000);
+    }
+
+    function pollPaymentStatus() {
+        if (pendingPaymentTripIds.length === 0) {
+            clearInterval(paymentPollTimer);
+            paymentPollTimer = null;
+            return;
+        }
+        // 批量查询所有待付款行程的付款状态
+        var idsToCheck = pendingPaymentTripIds.slice();
+        var promises = idsToCheck.map(function(tripId) {
+            return fetch('/api/trips/' + tripId)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success && data.trip && data.trip.paid) {
+                        // 乘客已付款！更新本地记录和收入
+                        updateLocalTripPaidStatus(tripId);
+                        syncEarnings();
+                        showPaymentToast();
+                        // 从待付款队列移除
+                        var idx = pendingPaymentTripIds.indexOf(tripId);
+                        if (idx >= 0) pendingPaymentTripIds.splice(idx, 1);
+                        // 通知跨标签页
+                        localStorage.setItem('mamba_trip_sync', JSON.stringify({
+                            action: 'payment_confirmed',
+                            tripId: tripId,
+                            timestamp: Date.now()
+                        }));
+                    }
+                })
+                .catch(function() {});
+        });
+        Promise.all(promises).then(function() {
+            if (pendingPaymentTripIds.length === 0) {
+                clearInterval(paymentPollTimer);
+                paymentPollTimer = null;
+            }
+        });
     }
 
     function resetOrder() {

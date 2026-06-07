@@ -235,7 +235,7 @@
     let showLabels = true;
     let tickIndex = 0;
     let lockedGridId = null;        // 当前锁定的网格 ID
-    let pressedGridId = null;       // 当前按住但未锁定的网格 ID
+    let pressedGridId = null;       // 当前悬浮或按住但未锁定的网格 ID
     let clickTimers = {};           // 单击/双击判别计时器
     let savedMapView = null;        // 锁定前的地图视野 { center, zoom }
 
@@ -302,15 +302,19 @@
             }).addTo(map);
 
             const center = getGridCenter(i);
-            // 按住显示 / 松开隐藏 / 双击锁定 / 单击解锁
-            polygon.on('mousedown', () => onGridPress(i, center.lng, center.lat, polygon));
-            polygon.on('mouseup', () => onGridRelease(i, polygon));
-            polygon.on('mouseleave', () => onGridRelease(i, polygon));
+
+            // 桌面端鼠标悬浮显示 / 移出隐藏
+            polygon.on('mouseover', () => onGridInteractStart(i, center.lng, center.lat, polygon));
+            polygon.on('mouseout', () => onGridInteractEnd(i, polygon));
+
+            // 移动端触摸按住显示 / 松开隐藏
+            polygon.on('touchstart', () => onGridInteractStart(i, center.lng, center.lat, polygon));
+            polygon.on('touchend', () => onGridInteractEnd(i, polygon));
+            polygon.on('touchcancel', () => onGridInteractEnd(i, polygon));
+
+            // 双击锁定 / 单击下发调度
             polygon.on('click', (e) => { L.DomEvent.stopPropagation(e); onGridSingleClick(i, center.lng, center.lat, polygon); });
             polygon.on('dblclick', (e) => { L.DomEvent.stopPropagation(e); onGridDblClick(i, center.lng, center.lat, polygon); });
-            // 移动端触摸支持
-            polygon.on('touchstart', () => onGridPress(i, center.lng, center.lat, polygon));
-            polygon.on('touchend', () => onGridRelease(i, polygon));
 
             gridPolygons.push(polygon);
         }
@@ -382,7 +386,7 @@
         });
     }
 
-    // ========== 网格交互：按住显示 / 松开隐藏 / 双击锁定 / 单击解锁 ==========
+    // ========== 网格交互：悬浮/按住显示 / 松开隐藏 / 双击锁定 / 单击解锁 ==========
 
     function buildGridTooltipHTML(gridId, predVal, trueVal) {
         const ratio = Math.min(1, predVal / 120);
@@ -392,7 +396,7 @@
         const gridName = GRID_NAMES[gridId] || `Grid ${gridId}`;
         const isLocked = (lockedGridId === gridId);
         const lockHint = isLocked ? '<div class="text-[10px] text-blue-500 font-bold mt-1">&#128274; 已锁定 &middot; 单击解除</div>' :
-                                    '<div class="text-[10px] text-slate-400 italic mt-1">双击锁定 &middot; 按住查看</div>';
+                                    '<div class="text-[10px] text-slate-400 italic mt-1">双击锁定 &middot; 悬浮/按住查看</div>';
         return '<div class="text-xs space-y-1 p-2 bg-white text-slate-800 rounded-lg shadow-xl border border-slate-200" style="min-width:170px;">' +
             '<div class="font-extrabold text-rose-500 flex items-center gap-1">' + gridName + ' <span class="text-[10px] text-slate-400 font-normal">Grid ' + gridId + '</span></div>' +
             '<div class="border-t border-slate-100 my-1"></div>' +
@@ -416,12 +420,12 @@
         polygon.openTooltip();
     }
 
-    function onGridPress(gridId, lng, lat, polygon) {
+    function onGridInteractStart(gridId, lng, lat, polygon) {
         pressedGridId = gridId;
         showGridTooltip(gridId, lng, lat, polygon);
     }
 
-    function onGridRelease(gridId, polygon) {
+    function onGridInteractEnd(gridId, polygon) {
         if (lockedGridId !== gridId) {
             pressedGridId = null;
             polygon.closeTooltip();
@@ -750,7 +754,7 @@
         }
     });
 
-    // ========== Tooltip 实时刷新 (按住/锁定网格时数值随时间变化) ==========
+    // ========== Tooltip 实时刷新 (悬浮/按住/锁定网格时数值随时间变化) ==========
     function refreshActiveTooltips() {
         // 锁定网格 tooltip 随 tick 更新
         if (lockedGridId !== null) {
@@ -759,7 +763,7 @@
                 poly.setTooltipContent(buildGridTooltipHTML(lockedGridId, getLivePrediction(lockedGridId), getTrueValue(lockedGridId)));
             }
         }
-        // 按住中网格 tooltip 同样随 tick 更新
+        // 悬浮/按住中网格 tooltip 同样随 tick 更新
         if (pressedGridId !== null && pressedGridId !== lockedGridId) {
             const poly = gridPolygons[pressedGridId];
             if (poly && poly.getTooltip()) {
