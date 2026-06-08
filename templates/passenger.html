@@ -276,6 +276,15 @@
     let gpsLocated = false;
 
     // 按乘客ID隔离存储，每个乘客只能看到自己的行程记录
+    function fmtLocalTime(d) {
+        return d.getFullYear() + '-' +
+            (d.getMonth()+1).toString().padStart(2,'0') + '-' +
+            d.getDate().toString().padStart(2,'0') + ' ' +
+            d.getHours().toString().padStart(2,'0') + ':' +
+            d.getMinutes().toString().padStart(2,'0') + ':' +
+            d.getSeconds().toString().padStart(2,'0');
+    }
+
     function tripsStorageKey() {
         return 'mamba_passenger_trips_' + passengerId;
     }
@@ -1254,7 +1263,7 @@
                         dropoff: activeTrip.dropoff,
                         price: activeTrip.price,
                         distance: activeTrip.distance,
-                        timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
+                        timestamp: activeTrip.created_at ? fmtLocalTime(new Date(activeTrip.created_at * 1000)) : fmtLocalTime(new Date()),
                         status: 'completed',
                         paid: true
                     });
@@ -1361,7 +1370,7 @@
                         dropoff: activeTrip ? activeTrip.dropoff : {},
                         price: activeTrip ? activeTrip.price : 0,
                         distance: activeTrip ? activeTrip.distance : 0,
-                        timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
+                        timestamp: (activeTrip && activeTrip.created_at) ? fmtLocalTime(new Date(activeTrip.created_at * 1000)) : fmtLocalTime(new Date()),
                         status: 'cancelled'
                     });
                     localStorage.setItem(tripsStorageKey(), JSON.stringify(trips));

@@ -138,6 +138,15 @@
         loadAndRenderTrips();
     }
 
+    function fmtLocalTime(d) {
+        return d.getFullYear() + '-' +
+            (d.getMonth()+1).toString().padStart(2,'0') + '-' +
+            d.getDate().toString().padStart(2,'0') + ' ' +
+            d.getHours().toString().padStart(2,'0') + ':' +
+            d.getMinutes().toString().padStart(2,'0') + ':' +
+            d.getSeconds().toString().padStart(2,'0');
+    }
+
     async function loadAndRenderTrips() {
         let trips = [];
         let serverTrips = [];
@@ -157,7 +166,7 @@
                             dropoff: t.dropoff || {},
                             price: t.price || 0,
                             distance: t.distance || 0,
-                            timestamp: t.created_at ? new Date(t.created_at * 1000).toISOString().replace('T',' ').substring(0,19) : '',
+                            timestamp: t.created_at ? fmtLocalTime(new Date(t.created_at * 1000)) : '',
                             status: t.status || 'completed',
                             paid: t.paid === true || t.paid === false ? t.paid : undefined,
                             ride_type: t.ride_type || '',
@@ -199,7 +208,7 @@
                                     dropoff: t.dropoff || {},
                                     price: t.price || 0,
                                     distance: t.distance || 0,
-                                    timestamp: t.created_at ? new Date(t.created_at * 1000).toISOString().replace('T',' ').substring(0,19) : '',
+                                    timestamp: t.created_at ? fmtLocalTime(new Date(t.created_at * 1000)) : '',
                                     status: t.status || 'completed',
                                     paid: t.paid === true || t.paid === false ? t.paid : undefined
                                 };
@@ -258,7 +267,7 @@
                                     dropoff: t.dropoff || {},
                                     price: t.price || 0,
                                     distance: t.distance || 0,
-                                    timestamp: t.created_at ? new Date(t.created_at * 1000).toISOString().replace('T',' ').substring(0,19) : '',
+                                    timestamp: t.created_at ? fmtLocalTime(new Date(t.created_at * 1000)) : '',
                                     status: t.status || 'completed',
                                     paid: t.paid === true || t.paid === false ? t.paid : undefined,
                                     ride_type: t.ride_type || ''

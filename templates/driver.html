@@ -137,7 +137,7 @@
                         <span class="text-indigo-600 font-bold" id="status-grid">Grid 112</span>
                     </div>
                     <div class="flex justify-between">
-                        <span class="text-slate-400">在线时长</span>
+                        <span class="text-slate-400">当前时间</span>
                         <span class="text-slate-600 font-bold" id="status-uptime">00:00:00</span>
                     </div>
                 </div>
@@ -259,6 +259,7 @@
     let paymentPollTimer = null;     // 轮询乘客付款状态
     let earningsToday = 0;
     let onlineSince = Date.now();
+    let orderStartTime = null;  // 订单起始时间（计算机本地时间）
 
     // 按司机ID隔离存储，每个司机只能看到自己的行程记录
     function tripsStorageKey() {
@@ -283,7 +284,10 @@
 
     async function syncEarnings() {
         // 今日收入：仅计算当天完成的行程金额之和
-        var todayStr = new Date().toISOString().substring(0, 10);  // "2026-06-02"
+        var now = new Date();
+        var todayStr = now.getFullYear() + '-' +
+            (now.getMonth()+1).toString().padStart(2,'0') + '-' +
+            now.getDate().toString().padStart(2,'0');
         var todayStart = new Date(todayStr + 'T00:00:00+08:00').getTime() / 1000;  // 北京时间0点 Unix 秒
         var todayEnd = todayStart + 86400;
 
@@ -356,6 +360,7 @@
     function saveCancelledTrip(tripId) {
         // 乘客取消后，保存取消记录到本地
         if (!activeTrip || activeTrip.id !== tripId) return;
+        var ts = orderStartTime ? orderStartTime : new Date();
         var item = {
             id: activeTrip.id,
             passenger_name: activeTrip.passenger_name || '乘客',
@@ -364,7 +369,12 @@
             dropoff: activeTrip.dropoff,
             price: activeTrip.price || 0,
             distance: activeTrip.distance,
-            timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
+            timestamp: ts.getFullYear() + '-' +
+                (ts.getMonth()+1).toString().padStart(2,'0') + '-' +
+                ts.getDate().toString().padStart(2,'0') + ' ' +
+                ts.getHours().toString().padStart(2,'0') + ':' +
+                ts.getMinutes().toString().padStart(2,'0') + ':' +
+                ts.getSeconds().toString().padStart(2,'0'),
             status: 'cancelled',
             ride_type: activeTrip.ride_type || 'sd_xuan'
         };
@@ -453,7 +463,7 @@
                     if (msg.action === 'new_order') startDispatchPolling();
                 } catch(er) {}
             }
-            // 监听乘客端创建的新行程 → 立即轮询接取
+            // 监听乘客端创建的新行程 → 立即轮询接取在线
             if (e.key === 'mamba_trip_sync' && e.newValue) {
                 try { var msg2 = JSON.parse(e.newValue);
                     if (msg2.action === 'new_trip' && !activeTrip) {
@@ -926,6 +936,7 @@
     function showActiveOrder(trip) {
         activeTrip = trip;
         activeTripId = trip.id;
+        orderStartTime = new Date();  // 记录订单起始时间为计算机当前时间
 
         var isDispatch = trip.ride_type === 'dispatch_broadcast' || (trip.price === 0 && trip.passenger_id === 'dispatch_sys');
 
@@ -1044,6 +1055,7 @@
         }).then(r => r.json()).then(data => {
             if (data.success) {
                 // 保存取消记录
+                var ts = orderStartTime ? orderStartTime : new Date();
                 var item = {
                     id: activeTrip.id,
                     passenger_name: activeTrip.passenger_name || '乘客',
@@ -1052,7 +1064,12 @@
                     dropoff: activeTrip.dropoff,
                     price: activeTrip.price || 0,
                     distance: activeTrip.distance,
-                    timestamp: new Date().toISOString().replace('T',' ').substring(0,19),
+                    timestamp: ts.getFullYear() + '-' +
+                        (ts.getMonth()+1).toString().padStart(2,'0') + '-' +
+                        ts.getDate().toString().padStart(2,'0') + ' ' +
+                        ts.getHours().toString().padStart(2,'0') + ':' +
+                        ts.getMinutes().toString().padStart(2,'0') + ':' +
+                        ts.getSeconds().toString().padStart(2,'0'),
                     status: 'cancelled',
                     ride_type: activeTrip.ride_type || 'sd_xuan'
                 };
@@ -1206,6 +1223,7 @@
 
     function saveCompleted(trip) {
         var isDispatch = trip.ride_type === 'dispatch_broadcast' || (trip.price === 0 && trip.passenger_id === 'dispatch_sys');
+        var ts = orderStartTime ? orderStartTime : new Date();
         var item = {
             id: trip.id,
             passenger_name: trip.passenger_name,
@@ -1214,7 +1232,12 @@
             dropoff: trip.dropoff,
             price: trip.price || 0,
             distance: trip.distance,
-            timestamp: new Date().toISOString().replace('T',' ').substring(0, 19),
+            timestamp: ts.getFullYear() + '-' +
+                (ts.getMonth()+1).toString().padStart(2,'0') + '-' +
+                ts.getDate().toString().padStart(2,'0') + ' ' +
+                ts.getHours().toString().padStart(2,'0') + ':' +
+                ts.getMinutes().toString().padStart(2,'0') + ':' +
+                ts.getSeconds().toString().padStart(2,'0'),
             status: 'completed',
             paid: isDispatch ? true : false,  // 调度任务直接标记完成，无需付款
             ride_type: trip.ride_type || 'sd_xuan'
@@ -1301,6 +1324,7 @@
 
         activeTrip = null;
         activeTripId = null;
+        orderStartTime = null;  // 清除订单起始时间
         if (activeTripPollTimer) { clearInterval(activeTripPollTimer); activeTripPollTimer = null; }
         if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
         if (destRouteLine) { map.removeLayer(destRouteLine); destRouteLine = null; }
@@ -1327,7 +1351,7 @@
         syncEarnings();
     }
 
-    // 在线计时%20results
+    // 实时时钟（始终显示计算机当前时间）
     setInterval(function() {
         var d = new Date();
         document.getElementById('status-uptime').innerText =

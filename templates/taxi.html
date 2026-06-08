@@ -352,6 +352,15 @@
     // 取消本地獨立變量，將使用絕對時間的 Date.now() 進行鎖定計算
     let tickIndex = 0;
 
+    function fmtLocalTime(d) {
+        return d.getFullYear() + '-' +
+            (d.getMonth()+1).toString().padStart(2,'0') + '-' +
+            d.getDate().toString().padStart(2,'0') + ' ' +
+            d.getHours().toString().padStart(2,'0') + ':' +
+            d.getMinutes().toString().padStart(2,'0') + ':' +
+            d.getSeconds().toString().padStart(2,'0');
+    }
+
     // 💡 修复：让车主端直接写入全局调度日志库，解决同标签页切换时日志丢失的问题
     function pushToDispatchLog(msg, type) {
         let logs = [];
@@ -1393,7 +1402,7 @@
         }
     }
 
-    // --- 8. 派单池与接受派单 ---
+    // --- 8. 派单池与接受派单在线 ---
     function startDriverHeartbeat() {
         if (driverOnlineIntervalId) clearInterval(driverOnlineIntervalId);
 
@@ -1813,7 +1822,7 @@
             price: trip.price,
             distance: trip.distance,
             duration: trip.duration,
-            timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+            timestamp: trip.created_at ? fmtLocalTime(new Date(trip.created_at * 1000)) : fmtLocalTime(new Date()),
             status: "completed",
             dispatch_details: `时空运力补给成功：Mamba-GNN 毫秒级供需撮合，空载车辆准时与高需求网格 [Grid ${trip.dropoff.grid_id}] 完成对齐调度。`
         };
